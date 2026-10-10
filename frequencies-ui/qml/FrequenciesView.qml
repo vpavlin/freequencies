@@ -125,10 +125,32 @@ Item {
 
     function calById(id) { for (var i = 0; i < calendars.length; i++) if (calendars[i].id === id) return calendars[i]; return null }
     function eventById(id) { for (var i = 0; i < events.length; i++) if (events[i].id === id) return events[i]; return null }
-    function isFreqCal(c) {
+    // A calendar is a Frequencies calendar when its `status` field is the Frequencies one: a choice
+    // field offering Hold, Confirmed and Cancelled. A `status` field of another shape belongs to
+    // someone else's convention and is left alone.
+    function statusFieldOf(c) {
         var sc = (c && c.schema) || []
-        for (var i = 0; i < sc.length; i++) if (sc[i] && sc[i].key === "status") return true
-        return false
+        for (var i = 0; i < sc.length; i++) if (sc[i] && sc[i].key === "status") return sc[i]
+        return null
+    }
+    function isFreqStatusField(f) {
+        if (!f || f.type !== "enum" || !Array.isArray(f.options)) return false
+        for (var i = 0; i < root.statuses.length; i++) if (f.options.indexOf(root.statuses[i]) < 0) return false
+        return true
+    }
+    function isFreqCal(c) { return isFreqStatusField(statusFieldOf(c)) }
+    // Why "Use for Frequencies" can't adopt this calendar ("" = it can).
+    function adoptBlocker(c) {
+        if (!isEditorOf(c)) return "Only its owner or editors can add Frequencies fields"
+        var sf = statusFieldOf(c)
+        if (sf && !isFreqStatusField(sf)) return "Has its own “status” field, so Frequencies leaves it alone"
+        var sc = (c && c.schema) || []
+        for (var i = 0; i < sc.length; i++) {
+            var f = sc[i]
+            if (f && f.key === "venue" && f.type && f.type !== "text") return "Has its own “venue” field of another kind"
+            if (f && f.key === "type" && f.type && f.type !== "enum") return "Has its own “type” field of another kind"
+        }
+        return ""
     }
     readonly property var freqCals: { var o = []; for (var i = 0; i < calendars.length; i++) if (isFreqCal(calendars[i])) o.push(calendars[i]); return o }
     readonly property var otherCals: { var o = []; for (var i = 0; i < calendars.length; i++) if (!isFreqCal(calendars[i])) o.push(calendars[i]); return o }
@@ -146,6 +168,8 @@ Item {
 
     // "Use for Frequencies": add the Status / Venue / Type fields to a calendar's schema (keeps its own fields).
     function adoptCalendar(c) {
+        var why = adoptBlocker(c)
+        if (why) { root.notify(why + ".", true); return }
         var sc = (c.schema || []).slice()
         for (var i = 0; i < root.freqFields.length; i++) {
             var f = root.freqFields[i], have = false
@@ -248,18 +272,31 @@ Item {
     }
     // Change one Frequencies field on the night (status / venue / type) — a normal Scala edit.
     property bool saving: false
+    // Scala replaces a whole event on every edit (last write wins per event), so the edit is built on
+    // the freshest copy, fetched right before saving: a title or time someone changed since the board
+    // last refreshed is kept, not overwritten with the board's older copy.
     function setField(key, value) {
         var m = selMaster
         if (!m || saving) return
-        var up = JSON.parse(JSON.stringify(m))
-        delete up.seriesId; delete up.occ; delete up.ext; delete up.rsvps
-        up.fields = up.fields || {}
-        up.fields[key] = value
         saving = true
-        root.core("updateEvent", [JSON.stringify(up)], function (r) {
-            saving = false
-            if (String(root.j(r, "")) === m.id) { root.notify("Saved"); root.refresh() }
-            else root.notify("Couldn't save the change. You may not have edit rights on this calendar.", true)
+        root.core("getEvent", [m.id], function (raw) {
+            var fresh = root.j(raw, null)
+            if (!fresh || typeof fresh !== "object" || fresh.id !== m.id) {
+                saving = false
+                root.notify("Couldn't load the night to change it. It may have been deleted.", true)
+                root.refresh()
+                return
+            }
+            var up = JSON.parse(JSON.stringify(fresh))
+            delete up.seriesId; delete up.occ; delete up.ext; delete up.rsvps
+            if (!up.calendarId) up.calendarId = m.calendarId
+            up.fields = (up.fields && typeof up.fields === "object") ? up.fields : {}
+            up.fields[key] = value
+            root.core("updateEvent", [JSON.stringify(up)], function (r) {
+                saving = false
+                if (String(root.j(r, "")) === m.id) { root.notify("Saved"); root.refresh() }
+                else root.notify("Couldn't save the change. You may not have edit rights on this calendar.", true)
+            })
         })
     }
     function commentsOf(ev) {
@@ -337,9 +374,16 @@ Item {
 
         // ── sidebar: calendars ─────────────────────────────────────────────────
         Rectangle {
-            Layout.fillHeight: true; Layout.preferredWidth: 240; color: root.cMantle
+            Layout.fillHeight: true; Layout.preferredWidth: 210; color: root.cMantle
+            Flickable {
+                id: sideFlick
+                anchors.fill: parent; anchors.margins: 14; clip: true
+                contentWidth: width; contentHeight: sideCol.implicitHeight
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar {}
             ColumnLayout {
-                anchors.fill: parent; anchors.margins: 14; spacing: 8
+                id: sideCol
+                width: sideFlick.width; spacing: 8
                 LogosText { textFormat: Text.PlainText; text: "Frequencies"; color: root.cText; font.pixelSize: 20; font.weight: Theme.typography.weightMedium }
                 LogosText { textFormat: Text.PlainText; text: "Calendars"; color: root.cFaint; font.pixelSize: 11; Layout.topMargin: 8 }
                 LogosText { textFormat: Text.PlainText; visible: !root.loading && root.freqCals.length === 0; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
@@ -366,15 +410,17 @@ Item {
                         Layout.fillWidth: true; spacing: 2
                         LogosText { textFormat: Text.PlainText; text: modelData.name || "(unnamed)"; color: root.cSub; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
                         LogosText { textFormat: Text.PlainText
-                            text: root.isEditorOf(modelData) ? "Use for Frequencies" : "Only its owner or editors can add Frequencies fields"
-                            color: root.isEditorOf(modelData) ? root.cBlue : root.cFaint; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.Wrap
-                            MouseArea { anchors.fill: parent; enabled: root.isEditorOf(parent.parent.modelData); cursorShape: Qt.PointingHandCursor; onClicked: root.adoptCalendar(parent.parent.modelData) }
+                            readonly property string why: root.adoptBlocker(parent.modelData)
+                            text: why === "" ? "Use for Frequencies" : why
+                            color: why === "" ? root.cBlue : root.cFaint; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.Wrap
+                            MouseArea { anchors.fill: parent; enabled: parent.why === ""; cursorShape: Qt.PointingHandCursor; onClicked: root.adoptCalendar(parent.parent.modelData) }
                         }
                     }
                 }
-                Item { Layout.fillHeight: true }
+                Item { Layout.preferredHeight: 12 }
                 LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cFaint; font.pixelSize: 11
                     text: "Nights are Scala events: they also show in Scala, and comments are shared." }
+            }
             }
         }
 
@@ -396,6 +442,7 @@ Item {
                 Chip { text: "By venue"; on: root.laneBy === "venue"; onClicked: root.laneBy = "venue" }
                 Chip { text: "By status"; on: root.laneBy === "status"; onClicked: root.laneBy = "status" }
                 Chip { text: "By calendar"; on: root.laneBy === "calendar"; onClicked: root.laneBy = "calendar" }
+                LogosText { textFormat: Text.PlainText; text: "Double-click an empty cell to add a night there"; color: root.cFaint; font.pixelSize: 11; Layout.leftMargin: 10 }
             }
             LogosText { textFormat: Text.PlainText; visible: root.loadError !== ""; text: root.loadError; color: root.cRed; font.pixelSize: 13; Layout.fillWidth: true; wrapMode: Text.Wrap }
             LogosText { textFormat: Text.PlainText; visible: !root.loading && root.loadError === "" && root.grid.lanes.length === 0
@@ -410,8 +457,8 @@ Item {
                 ScrollBar.horizontal: ScrollBar {}
                 Column {
                     id: board
-                    readonly property int dateW: 80
-                    readonly property int cellW: 180
+                    readonly property int dateW: 64
+                    readonly property int cellW: 150
                     Row {
                         Item { width: board.dateW; height: 30 }
                         Repeater {
@@ -496,7 +543,7 @@ Item {
         // ── night panel ───────────────────────────────────────────────────────
         Rectangle {
             visible: root.selMaster !== null
-            Layout.fillHeight: true; Layout.preferredWidth: 340; color: root.cMantle
+            Layout.fillHeight: true; Layout.preferredWidth: 310; color: root.cMantle
             Flickable {
                 id: panelFlick
                 anchors.fill: parent; anchors.margins: 14; clip: true

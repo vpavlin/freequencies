@@ -16,8 +16,10 @@ write club nights without forking Scala's calendar, its sync, or its permissions
 2. **A night is an ordinary Scala event.** Frequencies data lives in Scala's own mechanisms:
    - the calendar's custom fields: `status` (Hold / Confirmed / Cancelled), `venue` (text),
      `type` (Club night / Concert / Residency / Other). "Use for Frequencies" adds them to an existing
-     calendar's schema (owners/editors only); a calendar with a `status` field counts as a Frequencies
-     calendar;
+     calendar's schema (owners/editors only). A calendar counts as a Frequencies calendar only when its
+     `status` field is a choice field offering Hold, Confirmed and Cancelled; a calendar with its own
+     `status` (or a `venue`/`type` of another kind) is left alone, and "Use for Frequencies" says why
+     instead of adopting it;
    - comments are Scala's (ADR 0024 in the Scala repo: `ext` items, ns `scala`, kind `comment`), so
      one thread shows in both apps;
    - later Frequencies-only data (links to artists, crew, gear) goes in `ext` items with
@@ -37,6 +39,11 @@ write club nights without forking Scala's calendar, its sync, or its permissions
   board needs the full event list with fields and comments.
 
 ## Consequences
+
+- Scala replaces a whole event on every edit (last write wins per event). Frequencies builds each edit on
+  a copy fetched right before saving (`getEvent`), so a title or time someone else changed since the
+  board refreshed isn't reverted. Two edits saved within the same moment can still race; a per-field
+  update in the Scala core would close that (not done).
 
 - Frequencies needs the `scala` core 0.12.0+ (comments); with an older core the board works and posting
   a comment fails with a message.

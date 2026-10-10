@@ -36,6 +36,12 @@ QString MockLogos::callModule(const QString &, const QString &method, const QVar
         QJsonObject o = QJsonDocument::fromJson(args.toList().value(0).toString().toUtf8()).object();
         return "\"" + o.value("id").toString() + "\"";
     }
+    if (method == "getEvent") {               // the freshest copy, as the core returns it
+        const QString id = args.toList().value(0).toString();
+        for (const auto &v : QJsonDocument::fromJson(EVENTS.toUtf8()).array())
+            if (v.toObject().value("id").toString() == id) return QString::fromUtf8(QJsonDocument(v.toObject()).toJson(QJsonDocument::Compact));
+        return "{}";
+    }
     if (method == "createEvent") return "\"new-1\"";
     if (method == "updateCalendarMeta") return "true";
     if (method == "postExt") return R"({"ok":true,"id":"x-new"})";
@@ -79,7 +85,8 @@ int main(int argc, char **argv) {
     QJsonArray cals{
         QJsonObject{{"id","c1"},{"name","Basement Collective"},{"schema",schema},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
         QJsonObject{{"id","c2"},{"name","Family"},{"schema",QJsonArray{}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
-        QJsonObject{{"id","c3"},{"name","Venue Partners"},{"schema",QJsonArray{}},{"owner","0xother"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}}};
+        QJsonObject{{"id","c3"},{"name","Venue Partners"},{"schema",QJsonArray{}},{"owner","0xother"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
+        QJsonObject{{"id","c4"},{"name","Studio projects"},{"schema",QJsonArray{QJsonObject{{"key","status"},{"label","Status"},{"type","text"}}}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}}};
     QJsonArray comment{QJsonObject{{"ns","scala"},{"kind","comment"},{"target","n1"},{"id","x-1"},{"author","0xpromoter111111"},
                                    {"hlc",QJsonObject{{"wall",double(at(-1,14))},{"ctr",0},{"dev","0xpromoter"}}},{"data",QJsonObject{{"text","Rider confirmed, two CDJs + mixer"}}}}};
     QJsonArray evs{
@@ -106,7 +113,8 @@ int main(int argc, char **argv) {
     QTimer::singleShot(1500, [&] { runJs(&view, "selected = null; laneBy = 'status'"); });
     QTimer::singleShot(1800, [&] { grab(&view, out + "/03-board-status.png"); runJs(&view, "openNew()"); });
     QTimer::singleShot(2200, [&] { grab(&view, out + "/04-new-night.png"); runJs(&view, "nTitle.text = 'Test night'; nVenue.text = 'Cross Club'; createNight()"); });
-    QTimer::singleShot(2600, [&] { runJs(&view, "adoptCalendar(calById('c2'))"); });
+    QTimer::singleShot(2600, [&] { runJs(&view, "adoptCalendar(calById('c2')); adoptCalendar(calById('c4'))"); });
+    QTimer::singleShot(2800, [&] { grab(&view, out + "/05-adopt-refused.png"); });
     QTimer::singleShot(3000, [&] { app.quit(); });
     return app.exec();
 }

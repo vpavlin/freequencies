@@ -2,7 +2,7 @@
   "name": "frequencies_ui",
   "display_name": "Frequencies",
   "icon": "icon.png",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "ui_qml",
   "category": "general",
   "description": "Frequencies: organise club nights (venues, status, comments) on top of the Scala calendar",
