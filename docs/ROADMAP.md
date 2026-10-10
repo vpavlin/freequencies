@@ -18,7 +18,7 @@ move, custom fields with badges, RSVP, owner/editor/viewer and Closed/Open/Colla
 | Comments per event (Scala ADR 0024, on ADR 0021 `ext` events) | 🧪 | 🧪 | both folds + parity fixtures; core `postExt`/`deleteExt`; Frequencies reads the same items |
 | Poster thumbnails from image attachments | ⬜ | ⬜ | phones can fetch but not upload attachments yet |
 | Desktop reminders follow each event's reminder setting | n/a | 🧪 | `66a5011`; the in-app banner used to fire 15 min before every event |
-| Hardening: core reads other members' data with `json::value()` (72 calls; throws on a wrong type) | n/a | ⬜ | reminders fixed in `66a5011`; the fold's `cal.meta` reads need a parity-safe fix |
+| Hardening: core reads other members' data with `json::value()` (throws on a wrong type) | 🧪 | 🧪 | fold: typed reads in both folds + malformed parity fixtures (`a69a38c`); reminders `66a5011`; ~55 remaining calls in `scala_impl.cpp` to audit |
 | Public "community" tier | ⬜ | ⬜ | needs a key-publishing design first |
 
 **Test build:** desktop core `scala` 0.12.0 + view `scala_ui` 0.12.0 (includes the intents work from
