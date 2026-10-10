@@ -7,7 +7,7 @@
     "android": "expo run:android",
     "prebuild": "expo prebuild --platform android",
     "tsc": "tsc --noEmit",
-    "test": "node --experimental-strip-types --no-warnings test/lineup.test.ts && node test/one-transport.test.cjs",
+    "test": "node --experimental-strip-types --no-warnings test/lineup.test.ts && node test/one-transport.test.cjs && node ../scripts/gen-qml-templates.mjs --check",
     "postinstall": "npm --prefix src/whisperbox install --no-save --ignore-scripts --no-audit --no-fund"
   },
   "dependencies": {

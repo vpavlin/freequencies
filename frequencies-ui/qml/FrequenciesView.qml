@@ -10,6 +10,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "templates.js" as Tpl
 
 import Logos.Theme
 import Logos.Controls
@@ -509,6 +510,18 @@ Item {
     }
     // WhisperBox's state: forms by id (title, status, mine, questions) and, for my forms, the answers.
     property var wbForms: ({})
+    property var wbSummaries: ({})          // formId -> formSummary (counts only for forms I can read)
+    function loadSummaries(ev) {
+        var fs = formsOf(ev)
+        for (var i = 0; i < fs.length; i++) (function (fid) {
+            wb("formSummary", [fid], function (r) {
+                var sm = j(r, null)
+                if (!sm || typeof sm !== "object" || sm.ok !== true) return
+                var m = {}; for (var k in wbSummaries) m[k] = wbSummaries[k]
+                m[fid] = sm; wbSummaries = m
+            })
+        })(fs[i].formId)
+    }
     property var wbResponses: ({})
     property string wbState: ""             // "" | "loading" | "ok" | "missing"
     function loadWb() {
@@ -520,42 +533,29 @@ Item {
             wbForms = (snap.state.forms && typeof snap.state.forms === "object") ? snap.state.forms : {}
             wbResponses = (snap.creatorView && snap.creatorView.responses && typeof snap.creatorView.responses === "object") ? snap.creatorView.responses : {}
             wbState = "ok"
+            loadSummaries(selMaster)
         })
     }
     onSelMasterChanged: if (selMaster && formsOf(selMaster).length > 0) loadWb()
     Timer { interval: 15000; repeat: true; running: root.ready && !!root.selMaster && root.formsOf(root.selMaster).length > 0; onTriggered: root.loadWb() }
     function formLine(f) {
-        var w = wbForms[f.formId]
-        if (!w || typeof w !== "object") return purposeLabel(f.purpose) + (wbState === "missing" ? " · WhisperBox isn't answering" : " · syncing…")
-        var parts = [purposeLabel(f.purpose), str(w.status) === "closed" ? "Closed" : "Open"]
-        if (w.mine === true || w.coOwner === true) {
-            var n = Array.isArray(wbResponses[f.formId]) ? wbResponses[f.formId].length : 0
+        var sm = wbSummaries[f.formId]
+        if (!sm) return purposeLabel(f.purpose) + (wbState === "missing" ? " · WhisperBox isn't answering" : " · syncing…")
+        var parts = [purposeLabel(f.purpose), str(sm.status) === "closed" ? "Closed" : "Open"]
+        if (sm.canRead === true) {
+            var n = typeof sm.responses === "number" ? sm.responses : 0
             parts.push(n + (n === 1 ? " response" : " responses"))
-            if (typeof w.newResponses === "number" && w.newResponses > 0) parts.push(w.newResponses + " new")
-        } else parts.push("answers go to " + str(w.creator).substring(0, 8) + "…")
+            if (typeof sm.newResponses === "number" && sm.newResponses > 0) parts.push(sm.newResponses + " new")
+        } else parts.push("answers go to its creator")
         return parts.join(" · ")
     }
-    function formTitle(f) { var w = wbForms[f.formId]; return (w && str(w.title)) || f.title || purposeLabel(f.purpose) }
+    function formTitle(f) { var sm = wbSummaries[f.formId], w = wbForms[f.formId]; return (sm && str(sm.title)) || (w && str(w.title)) || f.title || purposeLabel(f.purpose) }
 
-    // Starting points for each purpose (moves to whisperbox-sdk's shared templates when it ships).
+    // WhisperBox's shared templates (templates.js is generated from whisperbox-sdk), titled for the night,
+    // so the desktop and Android offer the same forms (ADR 0005).
     function formTemplate(purpose, ev) {
-        var when = Qt.formatDate(new Date(ev.startTime), "d MMM yyyy"), name = ev.title || "our night"
-        var q = function (id, type, text, required, extra) { var o = { id: id, type: type, text: text, required: !!required }; for (var k in (extra || {})) o[k] = extra[k]; return o }
-        if (purpose === "booking") return { title: "Play at " + name + " (" + when + ")",
-            description: "Tell us about your act. Only the organisers can read your answers.",
-            questions: [q("q1", "text", "Artist / act name", true), q("q2", "email", "Email", true), q("q3", "text", "Genre / style"),
-                        q("q4", "url", "A link to your music"), q("q5", "boolean", "Are you free on " + when + "?", true),
-                        q("q6", "number", "Your fee (EUR)", false, { min: 0 }), q("q7", "textarea", "Anything else we should know")] }
-        if (purpose === "crew") return { title: "Crew for " + name + " (" + when + ")",
-            description: "Help us run the night. Only the organisers can read your answers.",
-            questions: [q("q1", "text", "Your name", true), q("q2", "text", "Phone or handle", true),
-                        q("q3", "checkbox", "What can you do?", true, { options: ["Door", "Bar", "Sound", "Lights", "Cloakroom", "Set-up / clean-up"] }),
-                        q("q4", "radioButtons", "When can you help?", true, { options: ["Early", "Late", "The whole night"] }), q("q5", "textarea", "Notes")] }
-        if (purpose === "guestlist") return { title: "Guest list: " + name + " (" + when + ")",
-            description: "Put your name down. Only the organisers can read the list.",
-            questions: [q("q1", "text", "Name at the door", true), q("q2", "number", "Plus-ones", false, { min: 0, max: 3 }), q("q3", "email", "Email (optional)")] }
-        return { title: "How was " + name + "?", description: "Tell us what you thought. Answers are anonymous.", anonymous: true,
-            questions: [q("q1", "scale", "Overall", true, { min: 1, max: 5, style: "stars" }), q("q2", "textarea", "Best part"), q("q3", "textarea", "What should we change?")] }
+        var when = Qt.formatDate(new Date(ev.startTime), "d MMM"), name = ev.title || "our night"
+        return Tpl.template(purpose, { title: purposeLabel(purpose) + ": " + name + " (" + when + ")" })
     }
     property bool formBusy: false
     function addForm(purpose) {
@@ -948,7 +948,7 @@ Item {
                             id: fm
                             required property var modelData
                             readonly property var w: root.wbForms[modelData.formId]
-                            readonly property bool mine: !!w && (w.mine === true || w.coOwner === true)
+                            readonly property bool mine: !!root.wbSummaries[modelData.formId] && root.wbSummaries[modelData.formId].canRead === true
                             Layout.fillWidth: true; Layout.preferredHeight: fmCol.implicitHeight + 14; radius: 6; color: root.cSurface
                             ColumnLayout {
                                 id: fmCol

@@ -32,6 +32,12 @@ QString MockLogos::callModule(const QString &mod, const QString &method, const Q
             "questions":[{"id":"q1","type":"text","text":"Name at the door"},{"id":"q2","type":"number","text":"Plus-ones"},{"id":"q3","type":"email","text":"Email (optional)"}]},
           "form-b2":{"id":"form-b2","title":"Crew for Bassline Fridays","status":"closed","creator":"0xpromoter111111","mine":false}}},
           "creatorView":{"responses":{"form-a1":[{},{},{}]}}})J");
+        if (method == "formSummary") {
+            const QString fid = args.toList().value(0).toString();
+            if (fid == "form-a1") return R"J({"ok":true,"formId":"form-a1","title":"Guest list: Bassline Fridays","status":"open","mine":true,"coOwner":false,"canRead":true,"receipts":2,"responses":3,"newResponses":1,"lastResponseAt":1791620000000})J";
+            if (fid == "form-b2") return R"J({"ok":true,"formId":"form-b2","title":"Crew for Bassline Fridays","status":"closed","mine":false,"coOwner":false,"canRead":false,"receipts":0})J";
+            return R"({"ok":false,"error":"unknown form"})";
+        }
         if (method == "createForm") return R"({"ok":true,"formId":"form-new1"})";
         if (method == "shareUri") return R"({"ok":true,"uri":"whisperbox://form?id=form-new1&by=0xme"})";
         if (method == "getDecryptedResponses") return QString::fromUtf8(R"({"ok":true,"responses":[
