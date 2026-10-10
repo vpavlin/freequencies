@@ -29,10 +29,10 @@ and Android 0.9.118 (vc139) on the Loam F-Droid test repo. Not yet on apps.vpavl
 | Feature | Status | Notes |
 |---|---|---|
 | Kith: artists from a Kith book; line-up, set times and fees per night (ADR 0004) | 🧪 | fees live on the night, not on the contact; Android uses [kith-sdk](https://github.com/vpavlin/kith-sdk) |
-| KYM: a budget per night, linked to the event id | ⬜ | |
-| WhisperBox forms: artist booking requests, crew sign-up, guest lists → Scala events | 🔨 | WhisperBox is becoming a library (whisperbox-sdk); a night links its forms as `ext` items (kind `form`) |
+| KYM: a budget per night, linked to the event id | ⬜ | design proposed in ADR 0006; needs budget-scoped calls in KYM |
+| WhisperBox forms: artist booking requests, crew sign-up, guest lists, feedback (ADR 0005) | 🧪 desktop · 🔨 Android | desktop `frequencies_ui` 0.3.0 (needs `whisperbox_core` 0.4.2); Android waits for whisperbox-sdk |
 
-**Test build (2026-10-10):** desktop `frequencies_ui` 0.2.0 (needs `scala` 0.12.1 + `kith` 0.3.1) on the LAN 0.3
+**Test build (2026-10-10):** desktop `frequencies_ui` 0.3.0 (needs `scala` 0.12.2 + `kith` 0.3.2 + `whisperbox_core` 0.4.2) on the LAN 0.3
 repo; Android 0.2.0 (vc2) on the Loam F-Droid test repo.
 
 ## 3. New modules
