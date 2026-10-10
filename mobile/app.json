@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Frequencies",
+    "slug": "frequencies",
+    "scheme": "frequencies",
+    "version": "0.1.0",
+    "platforms": [
+      "android"
+    ],
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "xyz.vpavlin.frequencies",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1e1e2e"
+      }
+    },
+    "plugins": [
+      "./plugins/withReleaseSigning",
+      "./plugins/withKeycard",
+      "expo-secure-store",
+      "expo-camera",
+      "./src/lib/loam-transport-pkg/plugins/withDeliveryClient.js",
+      "@react-native-community/datetimepicker"
+    ],
+    "extra": {
+      "comment": "versionCode here is source of truth; assert it matches android/app/build.gradle after prebuild."
+    }
+  }
+}

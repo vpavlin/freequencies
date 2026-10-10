@@ -47,7 +47,7 @@ and Android 0.9.118 (vc139) on the Loam F-Droid test repo. Not yet on apps.vpavl
 |---|---|---|
 | Desktop app `frequencies_ui` 0.1.0 (ADR 0002): nights board, night panel, new night, "Use for Frequencies" | 🧪 | on the LAN 0.3 repo (Linux x86_64/ARM64, macOS); needs `scala` 0.12.0+ |
 | Nights board = the Lanes view (columns by venue / status / calendar) | 🧪 | in `frequencies_ui`; logic from `prototypes/lanes` |
-| Android app | ⬜ | own app embedding Scala's sync library (ADR to come) |
+| Android app (ADR 0003): list board, night sheet, new night, calendars (create / join / Use for Frequencies) | 🔨 | on scala-sdk + the shared Loam node; first build in progress |
 | Event page linking artists, crew, budget, tasks, gear | ⬜ | |
 | "Same artist booked twice" warnings | ⬜ | |
 | Analytics (events per month, attendance, revenue) | ⬜ | |
