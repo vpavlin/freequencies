@@ -489,6 +489,137 @@ Item {
         })
     }
 
+    // ── forms (ADR 0005): WhisperBox forms attached to a night as ext items (kind "form") ──────
+    function wb(method, args, cb) { callVia("whisperbox_core", method, args, cb) }
+    readonly property var formPurposes: [
+        { id: "booking", label: "Artist booking" }, { id: "crew", label: "Crew sign-up" },
+        { id: "guestlist", label: "Guest list" }, { id: "feedback", label: "Feedback" }]
+    function purposeLabel(p) { for (var i = 0; i < formPurposes.length; i++) if (formPurposes[i].id === p) return formPurposes[i].label; return "Form" }
+    function formsOf(ev) {
+        var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], out = []
+        for (var i = 0; i < xs.length; i++) {
+            var x = xs[i]
+            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "form" || !str(x.id)) continue
+            var d = (x.data && typeof x.data === "object") ? x.data : {}
+            var fid = str(d.formId)
+            if (!fid) continue
+            out.push({ id: str(x.id), author: str(x.author), formId: fid, uri: str(d.uri), purpose: str(d.purpose), title: str(d.title) })
+        }
+        return out
+    }
+    // WhisperBox's state: forms by id (title, status, mine, questions) and, for my forms, the answers.
+    property var wbForms: ({})
+    property var wbResponses: ({})
+    property string wbState: ""             // "" | "loading" | "ok" | "missing"
+    function loadWb() {
+        if (wbState === "loading") return
+        wbState = "loading"
+        wb("snapshot", [], function (r) {
+            var snap = j(r, null)
+            if (!snap || typeof snap !== "object" || !snap.state || typeof snap.state !== "object") { wbState = "missing"; return }
+            wbForms = (snap.state.forms && typeof snap.state.forms === "object") ? snap.state.forms : {}
+            wbResponses = (snap.creatorView && snap.creatorView.responses && typeof snap.creatorView.responses === "object") ? snap.creatorView.responses : {}
+            wbState = "ok"
+        })
+    }
+    onSelMasterChanged: if (selMaster && formsOf(selMaster).length > 0) loadWb()
+    Timer { interval: 15000; repeat: true; running: root.ready && !!root.selMaster && root.formsOf(root.selMaster).length > 0; onTriggered: root.loadWb() }
+    function formLine(f) {
+        var w = wbForms[f.formId]
+        if (!w || typeof w !== "object") return purposeLabel(f.purpose) + (wbState === "missing" ? " · WhisperBox isn't answering" : " · syncing…")
+        var parts = [purposeLabel(f.purpose), str(w.status) === "closed" ? "Closed" : "Open"]
+        if (w.mine === true || w.coOwner === true) {
+            var n = Array.isArray(wbResponses[f.formId]) ? wbResponses[f.formId].length : 0
+            parts.push(n + (n === 1 ? " response" : " responses"))
+            if (typeof w.newResponses === "number" && w.newResponses > 0) parts.push(w.newResponses + " new")
+        } else parts.push("answers go to " + str(w.creator).substring(0, 8) + "…")
+        return parts.join(" · ")
+    }
+    function formTitle(f) { var w = wbForms[f.formId]; return (w && str(w.title)) || f.title || purposeLabel(f.purpose) }
+
+    // Starting points for each purpose (moves to whisperbox-sdk's shared templates when it ships).
+    function formTemplate(purpose, ev) {
+        var when = Qt.formatDate(new Date(ev.startTime), "d MMM yyyy"), name = ev.title || "our night"
+        var q = function (id, type, text, required, extra) { var o = { id: id, type: type, text: text, required: !!required }; for (var k in (extra || {})) o[k] = extra[k]; return o }
+        if (purpose === "booking") return { title: "Play at " + name + " (" + when + ")",
+            description: "Tell us about your act. Only the organisers can read your answers.",
+            questions: [q("q1", "text", "Artist / act name", true), q("q2", "email", "Email", true), q("q3", "text", "Genre / style"),
+                        q("q4", "url", "A link to your music"), q("q5", "boolean", "Are you free on " + when + "?", true),
+                        q("q6", "number", "Your fee (EUR)", false, { min: 0 }), q("q7", "textarea", "Anything else we should know")] }
+        if (purpose === "crew") return { title: "Crew for " + name + " (" + when + ")",
+            description: "Help us run the night. Only the organisers can read your answers.",
+            questions: [q("q1", "text", "Your name", true), q("q2", "text", "Phone or handle", true),
+                        q("q3", "checkbox", "What can you do?", true, { options: ["Door", "Bar", "Sound", "Lights", "Cloakroom", "Set-up / clean-up"] }),
+                        q("q4", "radioButtons", "When can you help?", true, { options: ["Early", "Late", "The whole night"] }), q("q5", "textarea", "Notes")] }
+        if (purpose === "guestlist") return { title: "Guest list: " + name + " (" + when + ")",
+            description: "Put your name down. Only the organisers can read the list.",
+            questions: [q("q1", "text", "Name at the door", true), q("q2", "number", "Plus-ones", false, { min: 0, max: 3 }), q("q3", "email", "Email (optional)")] }
+        return { title: "How was " + name + "?", description: "Tell us what you thought. Answers are anonymous.", anonymous: true,
+            questions: [q("q1", "scale", "Overall", true, { min: 1, max: 5, style: "stars" }), q("q2", "textarea", "Best part"), q("q3", "textarea", "What should we change?")] }
+    }
+    property bool formBusy: false
+    function addForm(purpose) {
+        if (!selMaster || formBusy) return
+        var ev = selMaster, def = formTemplate(purpose, selected || ev)
+        formBusy = true
+        wb("createForm", [JSON.stringify(def)], function (r) {
+            var res = j(r, {})
+            if (!res || !res.ok || !str(res.formId)) { formBusy = false; notify("Couldn't create the form" + (res && res.error ? ": " + res.error : ". Is the ‘whisperbox_core’ package installed?"), true); return }
+            var fid = str(res.formId)
+            wb("shareUri", [fid], function (r2) {
+                var su = j(r2, {}), uri = (su && su.ok) ? str(su.uri) : ""
+                var item = { ns: "xyz.frequencies", kind: "form", target: ev.id, id: fid, data: { formId: fid, uri: uri, purpose: purpose, title: def.title } }
+                core("postExt", [ev.calendarId, JSON.stringify(item)], function (r3) {
+                    formBusy = false
+                    var px = j(r3, {})
+                    if (px && px.ok) { formPopup.close(); notify("Form created. Copy its link to share it."); refresh(); loadWb() }
+                    else notify("The form was created in WhisperBox but couldn't be attached to the night" + (px && px.error ? ": " + px.error : "."), true)
+                })
+            })
+        })
+    }
+    function detachForm(f) {
+        if (!selMaster) return
+        core("deleteExt", [selMaster.calendarId, f.id], function (r) {
+            var res = j(r, {})
+            if (res && res.ok) { notify("Form removed from this night. It stays in WhisperBox."); refresh() } else notify("Couldn't remove the form.", true)
+        })
+    }
+    function copyText(t) { clipHelper.text = t; clipHelper.selectAll(); clipHelper.copy(); notify("Link copied") }
+    TextEdit { id: clipHelper; visible: false }
+
+    // responses viewer
+    property var respRows: []
+    property string respTitle: ""
+    function openResponses(f) {
+        respTitle = formTitle(f); respRows = []
+        respPopup.open()
+        wb("getDecryptedResponses", [f.formId], function (r) {
+            var res = j(r, {})
+            if (!res || !res.ok || !Array.isArray(res.responses)) { respRows = [{ head: "Couldn't read the answers", lines: [res && res.error ? str(res.error) : "Only the form's creator can read them."] }]; return }
+            var w = wbForms[f.formId] || {}, qs = Array.isArray(w.questions) ? w.questions : [], rows = []
+            for (var i = 0; i < res.responses.length; i++) {
+                var rr = res.responses[i] || {}, ans = Array.isArray(rr.answers) ? rr.answers : [], lines = []
+                for (var k = 0; k < ans.length; k++) {
+                    var a = ans[k] || {}, qq = null
+                    for (var m = 0; m < qs.length; m++) if (qs[m] && qs[m].id === a.questionId) { qq = qs[m]; break }
+                    lines.push((qq ? str(qq.text) : str(a.questionId)) + ": " + answerText(qq, a.value))
+                }
+                rows.push({ head: typeof rr.submittedAt === "number" ? Qt.formatDateTime(new Date(rr.submittedAt), "d MMM hh:mm") : "Answer " + (i + 1), lines: lines })
+            }
+            if (rows.length === 0) rows.push({ head: "No answers yet", lines: [] })
+            respRows = rows
+        })
+    }
+    function answerText(q, v) {
+        if (v === null || v === undefined || v === "") return "—"
+        var opts = (q && Array.isArray(q.options)) ? q.options : []
+        function one(x) { if (typeof x === "number" && opts[x] !== undefined) return String(opts[x]); if (x && typeof x === "object" && typeof x.other === "string") return x.other; return String(x) }
+        if (Array.isArray(v)) return v.map(one).join(", ")
+        if (typeof v === "boolean") return v ? "Yes" : "No"
+        return one(v)
+    }
+
     function rsvpSummary(ev) {
         var n = { going: 0, maybe: 0, no: 0 }, r = (ev && ev.rsvps) || {}
         for (var k in r) if (n[r[k]] !== undefined) n[r[k]]++
@@ -802,6 +933,40 @@ Item {
                         model: root.selected ? (root.doubles[root.occKey(root.selected)] || []) : []
                         delegate: LogosText { required property var modelData; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cYellow; font.pixelSize: 12; text: root.doubleLine(modelData) }
                     }
+                    // Forms: WhisperBox forms attached to this night (ADR 0005).
+                    RowLayout {
+                        Layout.fillWidth: true; Layout.topMargin: 6
+                        LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Forms (" + root.formsOf(root.selMaster).length + ")"; color: root.cFaint; font.pixelSize: 11 }
+                        LogosText { textFormat: Text.PlainText; text: "+ Form"; color: root.cBlue; font.pixelSize: 12
+                            MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: formPopup.open() } }
+                    }
+                    LogosText { textFormat: Text.PlainText; visible: root.formsOf(root.selMaster).length === 0; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
+                        text: "No forms yet. Add one for artist bookings, crew, the guest list or feedback." }
+                    Repeater {
+                        model: root.formsOf(root.selMaster)
+                        delegate: Rectangle {
+                            id: fm
+                            required property var modelData
+                            readonly property var w: root.wbForms[modelData.formId]
+                            readonly property bool mine: !!w && (w.mine === true || w.coOwner === true)
+                            Layout.fillWidth: true; Layout.preferredHeight: fmCol.implicitHeight + 14; radius: 6; color: root.cSurface
+                            ColumnLayout {
+                                id: fmCol
+                                x: 10; y: 7; width: parent.width - 20; spacing: 3
+                                LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; color: root.cText; font.pixelSize: 13; text: root.formTitle(fm.modelData) }
+                                LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; color: root.cSub; font.pixelSize: 11; text: root.formLine(fm.modelData) }
+                                Row {
+                                    spacing: 14
+                                    LogosText { textFormat: Text.PlainText; visible: fm.modelData.uri !== ""; text: "Copy link"; color: root.cBlue; font.pixelSize: 12
+                                        MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.copyText(fm.modelData.uri) } }
+                                    LogosText { textFormat: Text.PlainText; visible: fm.mine; text: "Answers"; color: root.cBlue; font.pixelSize: 12
+                                        MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.openResponses(fm.modelData) } }
+                                    LogosText { textFormat: Text.PlainText; visible: (!!root.selCal && fm.modelData.author === root.selCal.authorAddr) || root.isEditorOf(root.selCal); text: "Remove"; color: root.cRed; font.pixelSize: 12
+                                        MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.detachForm(fm.modelData) } }
+                                }
+                            }
+                        }
+                    }
                     LogosText { textFormat: Text.PlainText; visible: !!root.selMaster && !!root.selMaster.description; text: "Notes"; color: root.cFaint; font.pixelSize: 11; Layout.topMargin: 6 }
                     LogosText { textFormat: Text.PlainText; visible: !!root.selMaster && !!root.selMaster.description; text: root.selMaster ? (root.selMaster.description || "") : ""; color: root.cText; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
                     LogosText { textFormat: Text.PlainText; text: "Attendance: " + root.rsvpSummary(root.selMaster); color: root.cSub; font.pixelSize: 12; Layout.topMargin: 6 }
@@ -979,6 +1144,76 @@ Item {
                 Item { Layout.fillWidth: true }
                 Btn { text: root.aMine ? "Cancel" : "Close"; onClicked: artistPopup.close() }
                 Btn { visible: root.aMine; text: root.artistBusy ? "Saving…" : (root.aId ? "Save" : "Add"); primary: true; enabled_: !root.artistBusy; onClicked: root.saveArtist() }
+            }
+        }
+    }
+
+    // ── add a form ───────────────────────────────────────────────────────────────
+    Popup {
+        id: formPopup
+        anchors.centerIn: Overlay.overlay
+        width: 440; modal: true; padding: 20
+        background: Rectangle { radius: 12; color: root.cSurface; border.width: 1; border.color: root.cSurface2 }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 8
+            LogosText { textFormat: Text.PlainText; text: "Add a form"; color: root.cText; font.pixelSize: 18; font.weight: Theme.typography.weightMedium }
+            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
+                text: "A WhisperBox form for " + (root.selMaster ? (root.selMaster.title || "this night") : "this night") + ". Share its link; people answer in the WhisperBox app, and only you can read the answers." }
+            Repeater {
+                model: root.formPurposes
+                delegate: Rectangle {
+                    id: pr
+                    required property var modelData
+                    Layout.fillWidth: true; Layout.preferredHeight: 44; radius: 8
+                    color: prMa.containsMouse ? root.cSurface2 : root.cMantle; border.width: 1; border.color: root.cSurface2
+                    opacity: root.formBusy ? 0.5 : 1
+                    LogosText { textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter; x: 14; text: pr.modelData.label; color: root.cText; font.pixelSize: 14 }
+                    MouseArea { id: prMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: !root.formBusy; onClicked: root.addForm(pr.modelData.id) }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true; Layout.topMargin: 8
+                LogosText { textFormat: Text.PlainText; visible: root.formBusy; text: "Creating…"; color: root.cSub; font.pixelSize: 12 }
+                Item { Layout.fillWidth: true }
+                Btn { text: "Cancel"; onClicked: formPopup.close() }
+            }
+        }
+    }
+
+    // ── form answers ─────────────────────────────────────────────────────────────
+    Popup {
+        id: respPopup
+        anchors.centerIn: Overlay.overlay
+        width: 520; height: Math.min(root.height - 80, 560); modal: true; padding: 20
+        background: Rectangle { radius: 12; color: root.cSurface; border.width: 1; border.color: root.cSurface2 }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 8
+            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; text: root.respTitle; color: root.cText; font.pixelSize: 18; font.weight: Theme.typography.weightMedium }
+            LogosText { textFormat: Text.PlainText; visible: root.respRows.length === 0; text: "Reading the answers…"; color: root.cSub; font.pixelSize: 12 }
+            Flickable {
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                contentHeight: respCol.implicitHeight
+                ColumnLayout {
+                    id: respCol
+                    width: parent.width; spacing: 10
+                    Repeater {
+                        model: root.respRows
+                        delegate: ColumnLayout {
+                            required property var modelData
+                            Layout.fillWidth: true; spacing: 2
+                            LogosText { textFormat: Text.PlainText; text: parent.modelData.head; color: root.cFaint; font.pixelSize: 11 }
+                            Repeater {
+                                model: parent.modelData.lines
+                                delegate: LogosText { required property var modelData; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cText; font.pixelSize: 13; text: modelData }
+                            }
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Btn { text: "Close"; onClicked: respPopup.close() }
             }
         }
     }

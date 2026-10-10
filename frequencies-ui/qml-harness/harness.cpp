@@ -25,6 +25,21 @@ public:
     Q_INVOKABLE void callModuleAsync(const QString &mod, const QString &method, const QVariant &args, const QJSValue &cb, int timeoutMs);
 };
 QString MockLogos::callModule(const QString &mod, const QString &method, const QVariant &args) {
+    if (mod == "whisperbox_core") {          // two forms: one mine with answers, one someone else's
+        if (method != "snapshot") { QStringList parts; for (const auto &v : args.toList()) parts << v.toString(); fprintf(stderr, "[WB] %s(%s)\n", qPrintable(method), qPrintable(parts.join(" | "))); }
+        if (method == "snapshot") return QString::fromUtf8(R"J({"v":1,"state":{"forms":{
+          "form-a1":{"id":"form-a1","title":"Guest list: Bassline Fridays","status":"open","creator":"0xme","mine":true,"newResponses":1,
+            "questions":[{"id":"q1","type":"text","text":"Name at the door"},{"id":"q2","type":"number","text":"Plus-ones"},{"id":"q3","type":"email","text":"Email (optional)"}]},
+          "form-b2":{"id":"form-b2","title":"Crew for Bassline Fridays","status":"closed","creator":"0xpromoter111111","mine":false}}},
+          "creatorView":{"responses":{"form-a1":[{},{},{}]}}})J");
+        if (method == "createForm") return R"({"ok":true,"formId":"form-new1"})";
+        if (method == "shareUri") return R"({"ok":true,"uri":"whisperbox://form?id=form-new1&by=0xme"})";
+        if (method == "getDecryptedResponses") return QString::fromUtf8(R"({"ok":true,"responses":[
+          {"submittedAt":1791600000000,"answers":[{"questionId":"q1","value":"Jana Nováková"},{"questionId":"q2","value":2},{"questionId":"q3","value":""}]},
+          {"submittedAt":1791610000000,"answers":[{"questionId":"q1","value":"Petr K."},{"questionId":"q2","value":0}]},
+          {"submittedAt":1791620000000,"answers":[{"questionId":"q1","value":"Mira"},{"questionId":"q2","value":1},{"questionId":"q3","value":"mira@example.org"}]}]})");
+        return "";
+    }
     if (mod == "kith") {                      // the kith core: one artist book
         if (method == "listBooks") return R"([{"id":"b1","name":"Artists","contactCount":3}])";
         if (method == "listContacts") return R"([{"id":"k1","name":{"display":"DJ Nikola"}},{"id":"k2","name":{"display":"Mira Vex"}},{"id":"k3","name":"broken"},{"id":"k4","name":{"display":"Oskar B2B Lena"}}])";
@@ -103,6 +118,14 @@ int main(int argc, char **argv) {
     n1ext.append(artist("a2","n1","0xpromoter111111",QJsonObject{{"name","Local Warmup"},{"fee",80},{"currency","EUR"},{"set","22:00–23:00"},{"status","asked"}}));
     n1ext.append(artist("a3","n1","0xme",QJsonObject{{"name","Nobody"},{"status","cancelled"}}));
     n1ext.append(artist("a4","n1","0xme",QJsonValue("garbage").toObject()));
+    auto form = [&](const QString &fid, const QString &author, const QString &purpose, const QString &title) {
+        return QJsonObject{{"ns","xyz.frequencies"},{"kind","form"},{"target","n1"},{"id",fid},{"author",author},
+                           {"hlc",QJsonObject{{"wall",double(at(-1,13))},{"ctr",0},{"dev","d"}}},
+                           {"data",QJsonObject{{"formId",fid},{"uri","whisperbox://form?id="+fid+"&by="+author},{"purpose",purpose},{"title",title}}}};
+    };
+    n1ext.append(form("form-a1","0xme","guestlist","Guest list: Bassline Fridays"));
+    n1ext.append(form("form-b2","0xpromoter111111","crew","Crew for Bassline Fridays"));
+    n1ext.append(QJsonObject{{"ns","xyz.frequencies"},{"kind","form"},{"target","n1"},{"id","bad"},{"data",42}});
     QJsonArray n2ext{artist("b1","n2","0xme",QJsonObject{{"name","DJ Nikola (renamed)"},{"contact","k1"},{"set","02:00–04:00"},{"status","asked"}})};
     QJsonArray evs{
         night("n1","c1",at(0),6,"Bassline Fridays","Confirmed","Cross Club",n1ext),
@@ -138,7 +161,14 @@ int main(int argc, char **argv) {
     QTimer::singleShot(4800, [&] { grab(&view, out + "/08-others-booking.png"); runJs(&view, "artistPopup.close()"); });
     QTimer::singleShot(5000, [&] { runJs(&view, "openArtist(null); kithState = 'missing'"); });
     QTimer::singleShot(5300, [&] { grab(&view, out + "/09-no-kith.png"); });
-    QTimer::singleShot(5500, [&] { app.quit(); });
+    QTimer::singleShot(5500, [&] { runJs(&view, "artistPopup.close(); selected = null"); });
+    QTimer::singleShot(5600, [&] { runJs(&view, "selected = grid.days[0].cells[0][0]"); });
+    QTimer::singleShot(6000, [&] { runJs(&view, "panelFlick.contentY = 380"); });
+    QTimer::singleShot(6200, [&] { grab(&view, out + "/10-forms.png"); runJs(&view, "formPopup.open()"); });
+    QTimer::singleShot(6500, [&] { grab(&view, out + "/11-add-form.png"); runJs(&view, "addForm('booking')"); });
+    QTimer::singleShot(6900, [&] { runJs(&view, "openResponses(formsOf(selMaster)[0])"); });
+    QTimer::singleShot(7300, [&] { grab(&view, out + "/12-answers.png"); });
+    QTimer::singleShot(7500, [&] { app.quit(); });
     return app.exec();
 }
 #include "harness.moc"
