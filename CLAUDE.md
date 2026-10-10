@@ -6,6 +6,6 @@ with Scala as the spine. Read `docs/adr/0001-architecture.md` and `docs/ROADMAP.
 - Follow the `logos-app-charter` skill (Basecamp + Android at parity, Loam, local-first, event log).
 - Calendar features go to the Scala repo (vpavlin/scala), not here. Update `docs/ROADMAP.md` when
   one lands.
-- Collaborators on the shrooms mesh: atlas/whisperbox (forms) for booking/sign-up flows;
-  laptop/reviewer checks each prototype slice.
+- Collaborators: the WhisperBox agent (forms) for booking/sign-up flows; a reviewer agent
+  checks each prototype slice.
 - Keep private hostnames and agent names out of committed files.
