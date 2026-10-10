@@ -14,7 +14,6 @@ move, custom fields with badges, RSVP, owner/editor/viewer and Closed/Open/Colla
 |---|---|---|---|
 | Clash warnings (overlapping events in a calendar) | 🧪 | 🧪 | `d93cc4e`; tests in `mobile/test/clashes.test.mjs` |
 | Filter by field value and date range | 🧪 | 🧪 | `33d17fd`; enum/yes-no fields, presets; tests in `mobile/test/filters.test.mjs`. Core `searchEvents` unchanged (title/description/location only) |
-| Timeline with lanes (per calendar, or per enum field such as venue) | 🧪 | 🧪 | `2cdee83`; 14 days, "By calendar / By <field>"; tests in `mobile/test/lanes.test.mjs` |
 | Comments per event (Scala ADR 0024, on ADR 0021 `ext` events) | 🧪 | 🧪 | both folds + parity fixtures; core `postExt`/`deleteExt`; Frequencies reads the same items |
 | Poster thumbnails from image attachments | ⬜ | ⬜ | phones can fetch but not upload attachments yet |
 | Desktop reminders follow each event's reminder setting | n/a | 🧪 | `66a5011`; the in-app banner used to fire 15 min before every event |
@@ -22,7 +21,8 @@ move, custom fields with badges, RSVP, owner/editor/viewer and Closed/Open/Colla
 | Public "community" tier | ⬜ | ⬜ | needs a key-publishing design first |
 
 **Test build (2026-10-10), published for testing:** desktop core `scala` 0.12.0 + view `scala_ui` 0.12.0
-(Linux x86_64, Linux ARM64, macOS; includes the intents work from `feat/intents`) on the LAN 0.3 repo,
+(Linux x86_64, Linux ARM64, macOS; includes the intents work from `feat/intents`, and still the Lanes
+view, which the next build drops) on the LAN 0.3 repo,
 and Android 0.9.117 (vc138) on the Loam F-Droid test repo. Not yet on apps.vpavlin.xyz or merged to Scala `main`.
 
 ## 2. Link the modules we have
@@ -44,9 +44,10 @@ and Android 0.9.117 (vc138) on the Loam F-Droid test repo. Not yet on apps.vpavl
 
 ## 4. Frequencies itself
 
-| Feature | Status |
-|---|---|
-| Event page linking artists, crew, budget, tasks, gear | ⬜ |
-| "Same artist booked twice" warnings | ⬜ |
-| Analytics (events per month, attendance, revenue) | ⬜ |
-| Integrations: tickets, weather, venue maps | ⬜ |
+| Feature | Status | Notes |
+|---|---|---|
+| Lanes view: one column per venue/status/calendar, days down the side | 🧪 | prototype in `prototypes/lanes` (moved out of Scala, see ADR 0001) |
+| Event page linking artists, crew, budget, tasks, gear | ⬜ | |
+| "Same artist booked twice" warnings | ⬜ | |
+| Analytics (events per month, attendance, revenue) | ⬜ | |
+| Integrations: tickets, weather, venue maps | ⬜ | |

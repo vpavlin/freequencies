@@ -18,8 +18,11 @@ with that space's key.
 ## Decision
 
 1. **Anything that is an event on a shared timeline lives in Scala**, built in the Scala repo
-   so every Scala user benefits: fields, files, recurrence, reminders, permissions, views,
-   filters, clash warnings, comments. Frequencies does not fork or wrap Scala's calendar.
+   so every Scala user benefits: fields, files, recurrence, reminders, permissions, the general
+   views, filters, clash warnings, comments. Frequencies does not fork or wrap Scala's calendar.
+   The test is "would a general calendar want this?": a view that only makes sense for organising
+   events, such as one column per venue (the Lanes view, moved out of Scala on 2026-10-10), belongs
+   to Frequencies.
 2. **A different kind of thing gets its own module**: people (Kith), money (KYM), forms
    (WhisperBox), and new modules for crew, gear and tasks. Each has its own log, permissions
    and Android app, and is useful outside Frequencies.

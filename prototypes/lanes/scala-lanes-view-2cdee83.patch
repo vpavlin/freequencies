@@ -1,0 +1,567 @@
+From 2cdee83be040ef56db19f04703ab4c889e7f5a8c Mon Sep 17 00:00:00 2001
+From: vpavlin <vaclav@status.im>
+Date: Sat, 10 Oct 2026 06:21:02 +0000
+Subject: [PATCH] Lanes view: days down the side, one column per calendar or
+ per field value (mobile + desktop)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Third Frequencies-driven Scala extension: a "Lanes" view next to month,
+week and day. Rows are 14 days from the selected day (‹ › step a week),
+columns are the shown calendars or, with "By <field>", the values of an
+enum field across those calendars, so a promoter can see one column per
+venue or per status. Lane order is stable: calendars in list order; field
+values in schema order, then values only seen on events, then "—" for
+events without the field. Cells list events by start time with the clash
+and RSVP marks; tapping a date opens that day, tapping an event opens it.
+The field filter and hidden calendars apply as in the other views.
+
+Logic in mobile/src/lib/lanes.ts (buildLanes / laneOf), mirrored in
+CalendarView.qml. Tests: mobile/test/lanes.test.mjs (10 cases incl. a
+weekly residency and unknown values), added to `npm test`. The QML harness
+renders the view by calendar and by the Status field (shots 14/15). The
+mobile view switcher's buttons are slightly narrower to fit five modes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ mobile/App.tsx                   |  96 ++++++++++++++++-
+ mobile/package.json              |   2 +-
+ mobile/src/lib/lanes.ts          |  60 +++++++++++
+ mobile/test/lanes.test.mjs       |  49 +++++++++
+ scala-ui/qml-harness/harness.cpp |   6 +-
+ scala-ui/qml/CalendarView.qml    | 176 ++++++++++++++++++++++++++++++-
+ 6 files changed, 379 insertions(+), 10 deletions(-)
+ create mode 100644 mobile/src/lib/lanes.ts
+ create mode 100644 mobile/test/lanes.test.mjs
+
+diff --git a/mobile/App.tsx b/mobile/App.tsx
+index 39f5a00..2142ce9 100644
+--- a/mobile/App.tsx
++++ b/mobile/App.tsx
+@@ -27,6 +27,7 @@ import { MonthGrid, CellRect } from "./src/components/MonthGrid";
+ import { expandEvents } from "./src/lib/recur";
+ import { findClashes, occKey } from "./src/lib/clashes";
+ import { filterChoices, matchesFieldFilter, rangeWindow, RANGES, type FieldFilter, type RangeId } from "./src/lib/filters";
++import { buildLanes, type LaneBy } from "./src/lib/lanes";
+ import { EventModal, EventDraft } from "./src/components/EventModal";
+ import { Drawer } from "./src/components/Drawer";
+ import { IdentitiesPanel, KeycardTapOverlay, KeycardPinGate } from "./src/components/KeycardProbe";
+@@ -185,7 +186,8 @@ export default function App() {
+     () => (activeFilter ? calVisibleEvents.filter((e) => matchesFieldFilter(e, activeFilter)) : calVisibleEvents),
+     [calVisibleEvents, activeFilter],
+   );
+-  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "agenda">("month"); // month grid / week strip / day timeline / upcoming agenda
++  const [viewMode, setViewMode] = useState<"month" | "week" | "day" | "lanes" | "agenda">("month"); // month grid / week strip / day timeline / lanes per calendar or venue / upcoming agenda
++  const [laneBy, setLaneBy] = useState<LaneBy>({ kind: "calendar" }); // lanes view: one column per calendar or per enum-field value
+   const [query, setQuery] = useState(""); // agenda search
+   const [status, setStatus] = useState("starting");
+   const [shared, setShared] = useState(false);
+@@ -591,6 +593,27 @@ export default function App() {
+   }, [calVisibleEvents, cursor, weekDays]);
+   const clashesOf = useCallback((ev: any) => (ev && ev.seriesId != null ? clashes.get(occKey(ev)) : undefined) || [], [clashes]);
+ 
++  // Lanes view (src/lib/lanes.ts): 14 days from the selected day, one column per calendar or per
++  // value of an enum field (e.g. venue). Lane options = the shown calendars' enum fields.
++  const laneFields = useMemo(() => {
++    const out: { key: string; label: string; options: string[] }[] = [];
++    for (const c of shownCals) for (const f of c.schema || []) {
++      if (f && f.key && f.type === "enum") {
++        const have = out.find((x) => x.key === f.key);
++        if (have) { for (const o of f.options || []) if (o && !have.options.includes(o)) have.options.push(o); }
++        else out.push({ key: f.key, label: f.label || f.key, options: (f.options || []).filter(Boolean) });
++      }
++    }
++    return out;
++  }, [shownCals]);
++  const laneGrid = useMemo(() => {
++    if (viewMode !== "lanes") return null;
++    const d0 = new Date(selected); d0.setHours(0, 0, 0, 0);
++    const by: LaneBy = laneBy.kind === "field" && laneFields.some((f) => f.key === laneBy.key) ? laneBy : { kind: "calendar" };
++    const opts = by.kind === "field" ? (laneFields.find((f) => f.key === by.key)?.options || []) : [];
++    return buildLanes(expandEvents(visibleEvents, d0.getTime(), d0.getTime() + 15 * 864e5), by, d0.getTime(), 14,
++      shownCals.map((c) => ({ id: c.id, name: c.name })), opts);
++  }, [viewMode, selected, laneBy, laneFields, visibleEvents, shownCals]);
+   // Feed the home-screen agenda widget: the next 24h of events, grouped by day with Today/Tomorrow
+   // dividers. If the next 24h is quiet, fall back to the next few upcoming so it's never empty.
+   // Local-only, refreshed whenever events/calendars change — updates offline.
+@@ -953,9 +976,9 @@ export default function App() {
+         {/* view toggle + search */}
+         <View style={s.viewBar}>
+           <View style={s.segment}>
+-            {(["month", "week", "day", "agenda"] as const).map((m) => (
++            {(["month", "week", "day", "lanes", "agenda"] as const).map((m) => (
+               <Pressable key={m} onPress={() => setViewMode(m)} style={[s.segBtn, viewMode === m && s.segBtnOn]}>
+-                <Text style={[s.segT, viewMode === m && s.segTOn]}>{m === "month" ? "Month" : m === "week" ? "Week" : m === "day" ? "Day" : "Agenda"}</Text>
++                <Text style={[s.segT, viewMode === m && s.segTOn]}>{m === "month" ? "Month" : m === "week" ? "Week" : m === "day" ? "Day" : m === "lanes" ? "Lanes" : "Agenda"}</Text>
+               </Pressable>
+             ))}
+           </View>
+@@ -1098,6 +1121,60 @@ export default function App() {
+             );
+           })}
+         </ScrollView>
++        </>) : viewMode === "lanes" && laneGrid ? (<>
++        {/* Lanes: rows = days, columns = calendars or the values of an enum field (e.g. venue). */}
++        <View style={s.laneBar}>
++          <Pressable hitSlop={8} onPress={() => setSelected((d) => { const x = new Date(d); x.setDate(x.getDate() - 7); return x; })}><Text style={s.laneNav}>‹</Text></Pressable>
++          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: "center" }} style={{ flex: 1 }}>
++            {[{ key: "", label: "Calendar" }, ...laneFields].map((f) => {
++              const on = f.key === "" ? laneBy.kind === "calendar" || !laneFields.some((x) => laneBy.kind === "field" && x.key === laneBy.key) : laneBy.kind === "field" && laneBy.key === f.key;
++              return (
++                <Pressable key={f.key || "_cal"} onPress={() => setLaneBy(f.key ? { kind: "field", key: f.key } : { kind: "calendar" })} style={[s.chip, on && s.chipOn]}>
++                  <Text style={[s.chipT, on && s.chipTOn]}>By {f.label.toLowerCase()}</Text>
++                </Pressable>
++              );
++            })}
++          </ScrollView>
++          <Pressable hitSlop={8} onPress={() => setSelected((d) => { const x = new Date(d); x.setDate(x.getDate() + 7); return x; })}><Text style={s.laneNav}>›</Text></Pressable>
++        </View>
++        {laneGrid.lanes.length === 0 ? <Text style={[s.sub, { padding: 16 }]}>No calendars to show.</Text> : (
++        <ScrollView style={{ flex: 1 }}>
++          <ScrollView horizontal>
++            <View>
++              <View style={s.laneRow}>
++                <View style={s.laneDate} />
++                {laneGrid.lanes.map((l) => (
++                  <View key={l.id} style={s.laneHead}>
++                    {laneBy.kind === "calendar" && <View style={[s.dot, { backgroundColor: colorForId(l.id) }]} />}
++                    <Text style={s.laneHeadT} numberOfLines={1}>{l.label}</Text>
++                  </View>
++                ))}
++              </View>
++              {laneGrid.days.map((d) => {
++                const date = new Date(d.date); const today = sameDay(date, new Date());
++                return (
++                  <View key={d.date} style={s.laneRow}>
++                    <Pressable style={s.laneDate} onPress={() => { setSelected(date); setViewMode("day"); }}>
++                      <Text style={[s.laneDateT, today && { color: C.today, fontWeight: "700" }]}>{date.toLocaleDateString(undefined, { weekday: "short" })}</Text>
++                      <Text style={[s.laneDateT, today && { color: C.today, fontWeight: "700" }]}>{date.toLocaleDateString(undefined, { day: "numeric", month: "short" })}</Text>
++                    </Pressable>
++                    {d.cells.map((cell, ci) => (
++                      <View key={ci} style={s.laneCell}>
++                        {cell.map((ev) => (
++                          <Pressable key={`${ev.id}-${ev.startTime}`} onPress={() => openEdit(ev)} style={[s.laneEv, { borderLeftColor: evColor(ev) }]}>
++                            <Text style={s.laneEvT} numberOfLines={1}>{clashesOf(ev).length ? "⚠ " : ""}{ev.title || "(untitled)"}</Text>
++                            <Text style={s.laneEvS} numberOfLines={1}>{ev.allDay ? "All day" : new Date(ev.startTime).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</Text>
++                          </Pressable>
++                        ))}
++                      </View>
++                    ))}
++                  </View>
++                );
++              })}
++            </View>
++          </ScrollView>
++        </ScrollView>
++        )}
+         </>) : (
+         <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
+           {agenda.length === 0 && <Text style={[s.sub, { padding: 16 }]}>{query.trim() || activeFilter ? "No matching events." : `No events: ${(RANGES.find((r) => r.id === rangeId) || RANGES[2]).label.toLowerCase()}.`}</Text>}
+@@ -1578,7 +1655,7 @@ const s = StyleSheet.create({
+   grid: { paddingHorizontal: 12, paddingTop: 4 },
+   viewBar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingBottom: 6 },
+   segment: { flexDirection: "row", backgroundColor: C.surface, borderRadius: 9, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
+-  segBtn: { paddingVertical: 6, paddingHorizontal: 16 },
++  segBtn: { paddingVertical: 6, paddingHorizontal: 11 },
+   segBtnOn: { backgroundColor: C.primary },
+   segT: { color: C.sub, fontSize: 13, fontWeight: "600" },
+   segTOn: { color: C.bg },
+@@ -1600,6 +1677,17 @@ const s = StyleSheet.create({
+   hourEmpty: { height: 32 },
+   hourEvent: { backgroundColor: C.surface, borderRadius: 10, borderWidth: 1, borderColor: C.border, borderLeftWidth: 3, padding: 10, marginTop: 6 },
+   evTitle: { color: C.text, fontSize: 15, fontWeight: "600" },
++  laneBar: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingBottom: 8 },
++  laneNav: { color: C.primary, fontSize: 22, paddingHorizontal: 4 },
++  laneRow: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: C.border },
++  laneDate: { width: 64, paddingVertical: 6, paddingHorizontal: 8, justifyContent: "center" },
++  laneDateT: { color: C.sub, fontSize: 12 },
++  laneHead: { width: 140, flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 6 },
++  laneHeadT: { color: C.text, fontSize: 13, fontWeight: "700", flexShrink: 1 },
++  laneCell: { width: 140, padding: 4, gap: 4, borderLeftWidth: 1, borderLeftColor: C.border, minHeight: 44 },
++  laneEv: { backgroundColor: C.surface, borderRadius: 6, borderLeftWidth: 3, paddingHorizontal: 6, paddingVertical: 4 },
++  laneEvT: { color: C.text, fontSize: 12, fontWeight: "600" },
++  laneEvS: { color: C.sub, fontSize: 11 },
+   chipRow: { gap: 6, paddingHorizontal: 14, paddingBottom: 8, alignItems: "center" },
+   chip: { borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
+   chipOn: { borderColor: C.primary, backgroundColor: C.surface },
+diff --git a/mobile/package.json b/mobile/package.json
+index 487d504..d45641f 100644
+--- a/mobile/package.json
++++ b/mobile/package.json
+@@ -7,7 +7,7 @@
+     "android": "expo run:android",
+     "prebuild": "expo prebuild --platform android",
+     "tsc": "tsc --noEmit",
+-    "test": "bash test/parity.sh && bash test/crypto-parity.sh && bash test/interop-parity.sh && bash test/catchup-parity.sh && bash test/roles-fold.sh && bash test/invites-fold.sh && node --experimental-strip-types --import ./test/register.mjs test/invites-client.test.mjs && node --experimental-strip-types --import ./test/register.mjs test/clashes.test.mjs && node --experimental-strip-types --import ./test/register.mjs test/filters.test.mjs"
++    "test": "bash test/parity.sh && bash test/crypto-parity.sh && bash test/interop-parity.sh && bash test/catchup-parity.sh && bash test/roles-fold.sh && bash test/invites-fold.sh && node --experimental-strip-types --import ./test/register.mjs test/invites-client.test.mjs && node --experimental-strip-types --import ./test/register.mjs test/clashes.test.mjs && node --experimental-strip-types --import ./test/register.mjs test/filters.test.mjs && node --experimental-strip-types --import ./test/register.mjs test/lanes.test.mjs"
+   },
+   "dependencies": {
+     "@noble/ciphers": "^2.2.0",
+diff --git a/mobile/src/lib/lanes.ts b/mobile/src/lib/lanes.ts
+new file mode 100644
+index 0000000..302ba70
+--- /dev/null
++++ b/mobile/src/lib/lanes.ts
+@@ -0,0 +1,60 @@
++// Lanes view: days down the side, one column ("lane") per calendar or per value of an enum
++// field (e.g. one lane per venue), so a promoter sees every room's nights side by side.
++//
++// View-only. Lanes appear in a stable order: calendars in list order; field values in schema
++// order, then any other values seen on events, then "—" for events without the field. The same
++// algorithm runs in the desktop QML view (CalendarView.qml `buildLanes`).
++import type { Occurrence } from "./recur";
++
++export type LaneBy = { kind: "calendar" } | { kind: "field"; key: string };
++export interface Lane { id: string; label: string }
++export interface LaneDay { date: number; cells: Occurrence[][] } // cells[i] belongs to lanes[i]
++export interface LaneGrid { lanes: Lane[]; days: LaneDay[] }
++
++export const NO_VALUE = "—";
++
++// `cals` gives order + names for calendar lanes; `options` the schema order of a field's values.
++export function laneOf(o: Occurrence, by: LaneBy): string {
++  if (by.kind === "calendar") return o.calendarId;
++  const v = o.fields ? o.fields[by.key] : undefined;
++  return v == null || v === "" ? NO_VALUE : String(v);
++}
++
++export function buildLanes(
++  occs: Occurrence[],
++  by: LaneBy,
++  firstDay: number,        // local midnight of the first row
++  nDays: number,
++  cals: { id: string; name: string }[],
++  options: string[] = [],
++): LaneGrid {
++  const lanes: Lane[] = [];
++  const index = new Map<string, number>();
++  const addLane = (id: string, label: string) => { if (!index.has(id)) { index.set(id, lanes.length); lanes.push({ id, label }); } };
++  if (by.kind === "calendar") {
++    for (const c of cals) addLane(c.id, c.name || "(unnamed)");
++  } else {
++    for (const o of options) if (o) addLane(o, o);
++  }
++  const dayStart = (n: number) => { const d = new Date(firstDay); d.setDate(d.getDate() + n); return d.getTime(); };
++  const end = dayStart(nDays);
++  const inWindow = occs.filter((o) => o.startTime >= firstDay && o.startTime < end).sort((a, b) => a.startTime - b.startTime);
++  let hasNoValue = false;
++  for (const o of inWindow) {
++    const id = laneOf(o, by);
++    if (id === NO_VALUE) { hasNoValue = true; continue; }
++    addLane(id, id); // a calendar not in `cals` (or a value not in `options`) is labelled by itself
++  }
++  if (hasNoValue) addLane(NO_VALUE, NO_VALUE);
++
++  const days: LaneDay[] = [];
++  for (let i = 0; i < nDays; i++) days.push({ date: dayStart(i), cells: lanes.map(() => []) });
++  for (const o of inWindow) {
++    // Row = the local day the occurrence starts on.
++    const d = new Date(o.startTime); d.setHours(0, 0, 0, 0);
++    const row = days.findIndex((x) => x.date === d.getTime());
++    const col = index.get(laneOf(o, by));
++    if (row >= 0 && col !== undefined) days[row].cells[col].push(o);
++  }
++  return { lanes, days };
++}
+diff --git a/mobile/test/lanes.test.mjs b/mobile/test/lanes.test.mjs
+new file mode 100644
+index 0000000..1bc7767
+--- /dev/null
++++ b/mobile/test/lanes.test.mjs
+@@ -0,0 +1,49 @@
++// Lanes view (mobile/src/lib/lanes.ts): lane order, rows per local day, field lanes.
++// Usage: node --experimental-strip-types --import ./register.mjs lanes.test.mjs
++import { buildLanes, NO_VALUE } from "../src/lib/lanes.ts";
++import { expandEvents } from "../src/lib/recur.ts";
++
++let pass = 0, fail = 0;
++const check = (c, m) => { if (c) { pass++; console.log("  ok    " + m); } else { fail++; console.log("  FAIL  " + m); } };
++
++const day0 = new Date(2026, 9, 10).getTime();           // local midnight, Sat 10 Oct 2026
++const at = (d, h) => new Date(2026, 9, 10 + d, h).getTime();
++const ev = (id, cal, d, h, extra = {}) => ({ id, calendarId: cal, title: id, startTime: at(d, h), endTime: at(d, h + 4), ...extra });
++const cals = [{ id: "cross", name: "Cross Club" }, { id: "ankali", name: "Ankali" }];
++const occ = (evs) => expandEvents(evs, day0, day0 + 14 * 864e5);
++
++console.log("== by calendar ==");
++{
++  const g = buildLanes(occ([ev("a", "ankali", 0, 22), ev("b", "cross", 0, 21), ev("c", "cross", 2, 23), ev("x", "elsewhere", 1, 20)]),
++    { kind: "calendar" }, day0, 7, cals);
++  check(g.lanes.map((l) => l.label).join("|") === "Cross Club|Ankali|elsewhere", "calendars in list order, unknown calendar last");
++  check(g.days.length === 7 && g.days[0].date === day0, "one row per day from the first day");
++  check(g.days[0].cells[0].map((o) => o.id).join() === "b" && g.days[0].cells[1].map((o) => o.id).join() === "a", "day 0: b in Cross Club, a in Ankali");
++  check(g.days[2].cells[0][0].id === "c", "day 2: c in Cross Club");
++  check(g.days[1].cells[2][0].id === "x", "day 1: x in its own lane");
++}
++
++console.log("== by field ==");
++{
++  const g = buildLanes(occ([
++    ev("p", "promo", 0, 22, { fields: { venue: "Ankali" } }),
++    ev("q", "promo", 0, 20, { fields: { venue: "Fuchs2" } }),
++    ev("r", "promo", 1, 21),
++  ]), { kind: "field", key: "venue" }, day0, 3, cals, ["Cross Club", "Ankali"]);
++  check(g.lanes.map((l) => l.id).join("|") === `Cross Club|Ankali|Fuchs2|${NO_VALUE}`, "schema options first, then other values, then no value");
++  check(g.days[0].cells[1][0].id === "p" && g.days[0].cells[2][0].id === "q", "events land in their value's lane");
++  check(g.days[1].cells[3][0].id === "r", "an event without the field goes to —");
++}
++
++console.log("== window and recurrence ==");
++{
++  const weekly = ev("res", "cross", 0, 22, { recur: { freq: "weekly", interval: 1 } });
++  const g = buildLanes(occ([weekly, ev("late", "cross", 20, 22)]), { kind: "calendar" }, day0, 14, cals);
++  const nights = g.days.filter((d) => d.cells[0].length).map((d) => new Date(d.date).getDate());
++  check(nights.join(",") === "10,17", "a weekly residency fills each week's row; events after the window are left out");
++  const two = buildLanes(occ([ev("e1", "cross", 0, 20), ev("e2", "cross", 0, 18)]), { kind: "calendar" }, day0, 1, cals);
++  check(two.days[0].cells[0].map((o) => o.id).join() === "e2,e1", "a cell lists its events by start time");
++}
++
++console.log(`\n${pass} passed, ${fail} failed`);
++process.exit(fail ? 1 : 0);
+diff --git a/scala-ui/qml-harness/harness.cpp b/scala-ui/qml-harness/harness.cpp
+index 72125ee..37893a5 100644
+--- a/scala-ui/qml-harness/harness.cpp
++++ b/scala-ui/qml-harness/harness.cpp
+@@ -154,7 +154,11 @@ int main(int argc, char **argv) {
+     QTimer::singleShot(8500, [&] { runJs(&view, "fieldFilter = { key: 'status', value: 'Confirmed' }; searchQuery = 'e'"); });
+     QTimer::singleShot(8900, [&] { grab(&view, out + "/12-filter-search.png"); runJs(&view, "rangeId = 'next7'; rangePicked = true"); });
+     QTimer::singleShot(9200, [&] { grab(&view, out + "/13-filter-range.png"); });
+-    QTimer::singleShot(9500, [&] { app.quit(); });
++    // Lanes view: by calendar, then by the Status field.
++    QTimer::singleShot(9500, [&] { runJs(&view, "searchQuery = ''; fieldFilter = null; calMode = 'lanes'"); });
++    QTimer::singleShot(9800, [&] { grab(&view, out + "/14-lanes-calendar.png"); runJs(&view, "laneBy = { kind: 'field', key: 'status' }"); });
++    QTimer::singleShot(10100, [&] { grab(&view, out + "/15-lanes-status.png"); });
++    QTimer::singleShot(10400, [&] { app.quit(); });
+     return app.exec();
+ }
+ #include "harness.moc"
+diff --git a/scala-ui/qml/CalendarView.qml b/scala-ui/qml/CalendarView.qml
+index 549691c..2278f3b 100644
+--- a/scala-ui/qml/CalendarView.qml
++++ b/scala-ui/qml/CalendarView.qml
+@@ -459,6 +459,77 @@ Item {
+         if (ev && ev.fields) for (var k in ev.fields) { var v = String(ev.fields[k]); if (v.length > 0 && v.length <= 24) out.push(v) }
+         return out.slice(0, 4)
+     }
++    // ── lanes view (same algorithm as mobile src/lib/lanes.ts) ─────────────────
++    // Days down the side, one column per calendar or per value of an enum field (e.g. venue).
++    property var laneBy: ({ kind: "calendar" })
++    function laneFieldsOf(cals, hidden) {
++        var out = []
++        for (var i = 0; i < cals.length; i++) {
++            if (hidden[cals[i].id]) continue
++            var sc = cals[i].schema || []
++            for (var j = 0; j < sc.length; j++) {
++                var f = sc[j]; if (!f || !f.key || f.type !== "enum") continue
++                var have = null
++                for (var k = 0; k < out.length; k++) if (out[k].key === f.key) have = out[k]
++                var opts = f.options || []
++                if (have) { for (var m = 0; m < opts.length; m++) if (opts[m] && have.options.indexOf(opts[m]) < 0) have.options.push(opts[m]) }
++                else { var o2 = []; for (var n = 0; n < opts.length; n++) if (opts[n]) o2.push(opts[n]); out.push({ key: f.key, label: f.label || f.key, options: o2 }) }
++            }
++        }
++        return out
++    }
++    readonly property var laneFields: root.laneFieldsOf(root.calendars, root.hiddenCals)
++    readonly property var effectiveLaneBy: {
++        var b = root.laneBy
++        if (b && b.kind === "field") for (var i = 0; i < root.laneFields.length; i++) if (root.laneFields[i].key === b.key) return b
++        return { kind: "calendar" }
++    }
++    function laneOf(o, by) {
++        if (by.kind === "calendar") return o.calendarId
++        var v = o.fields ? o.fields[by.key] : undefined
++        return (v === undefined || v === null || v === "") ? "—" : String(v)
++    }
++    function buildLanes(occs, by, firstDay, nDays, cals, options) {
++        var lanes = [], index = {}
++        function addLane(id, label) { if (index[id] === undefined) { index[id] = lanes.length; lanes.push({ id: id, label: label }) } }
++        if (by.kind === "calendar") { for (var i = 0; i < cals.length; i++) addLane(cals[i].id, cals[i].name || "(unnamed)") }
++        else { for (var j = 0; j < options.length; j++) if (options[j]) addLane(options[j], options[j]) }
++        function dayStart(n) { var d = new Date(firstDay); d.setDate(d.getDate() + n); return d.getTime() }
++        var end = dayStart(nDays), inWin = []
++        for (var a = 0; a < occs.length; a++) if (occs[a].startTime >= firstDay && occs[a].startTime < end) inWin.push(occs[a])
++        inWin.sort(function (x, y) { return x.startTime - y.startTime })
++        var noValue = false
++        for (var b = 0; b < inWin.length; b++) { var id = root.laneOf(inWin[b], by); if (id === "—") { noValue = true; continue } addLane(id, id) }
++        if (noValue) addLane("—", "—")
++        var days = []
++        for (var c = 0; c < nDays; c++) { var cells = []; for (var e = 0; e < lanes.length; e++) cells.push([]); days.push({ date: dayStart(c), cells: cells }) }
++        for (var g = 0; g < inWin.length; g++) {
++            var dd = new Date(inWin[g].startTime); dd.setHours(0, 0, 0, 0)
++            var row = -1; for (var r = 0; r < days.length; r++) if (days[r].date === dd.getTime()) { row = r; break }
++            var col = index[root.laneOf(inWin[g], by)]
++            if (row >= 0 && col !== undefined) days[row].cells[col].push(inWin[g])
++        }
++        return { lanes: lanes, days: days }
++    }
++    function computeLaneGrid(day, by, fields) {
++        var d0 = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0, 0).getTime()
++        var cals = []
++        for (var i = 0; i < root.calendars.length; i++) {
++            var c = root.calendars[i]
++            if (root.hiddenCals[c.id] || (root.filterCalId !== "" && c.id !== root.filterCalId)) continue
++            cals.push({ id: c.id, name: c.name })
++        }
++        var opts = []
++        if (by.kind === "field") for (var j = 0; j < fields.length; j++) if (fields[j].key === by.key) opts = fields[j].options
++        return root.buildLanes(root.expandEvents(root.eventsFiltered(), d0, d0 + 15 * 864e5), by, d0, 14, cals, opts)
++    }
++    readonly property var laneGrid: root.calMode === "lanes" ? root.computeLaneGrid(root.selectedDay, root.effectiveLaneBy, root.laneFields) : null
++    function laneRangeLabel(day) {
++        var a = new Date(day.getFullYear(), day.getMonth(), day.getDate()); var b = new Date(a); b.setDate(b.getDate() + 13)
++        var mo = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
++        return a.getDate() + " " + mo[a.getMonth()] + " – " + b.getDate() + " " + mo[b.getMonth()] + " " + b.getFullYear()
++    }
++
+     // ── view filters (same logic as mobile src/lib/filters.ts) ──────────────────
+     // One custom-field value at a time (enum options and yes/no fields of the shown calendars),
+     // applied to every view; plus date-range presets for search results. View-only.
+@@ -528,7 +599,7 @@ Item {
+     readonly property bool searching: root.searchQuery.trim() !== ""
+     readonly property var searchResults: root.searching ? root.eventsMatching(root.searchQuery, root.effectiveRange) : []
+     // ── month / week view ────────────────────────────────────────────────────
+-    property string calMode: "month"   // "month" | "week"
++    property string calMode: "month"   // "month" | "week" | "day" | "lanes"
+     function weekDaysOf(d) {
+         var mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7))
+         var out = []
+@@ -542,12 +613,12 @@ Item {
+         return a.getDate() + " " + mo[a.getMonth()] + " – " + b.getDate() + " " + mo[b.getMonth()] + " " + b.getFullYear()
+     }
+     function goPrev() {
+-        if (calMode === "week") { var d = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() - 7); selectedDay = d; viewMonth = d }
++        if (calMode === "week" || calMode === "lanes") { var d = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() - 7); selectedDay = d; viewMonth = d }
+         else if (calMode === "day") { var dd = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() - 1); selectedDay = dd; viewMonth = dd }
+         else viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1)
+     }
+     function goNext() {
+-        if (calMode === "week") { var d = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() + 7); selectedDay = d; viewMonth = d }
++        if (calMode === "week" || calMode === "lanes") { var d = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() + 7); selectedDay = d; viewMonth = d }
+         else if (calMode === "day") { var dd = new Date(selectedDay.getFullYear(), selectedDay.getMonth(), selectedDay.getDate() + 1); selectedDay = dd; viewMonth = dd }
+         else viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1)
+     }
+@@ -817,6 +888,7 @@ Item {
+                 }
+                 LogosText { textFormat: Text.PlainText;
+                     text: root.calMode === "week" ? root.weekLabel(root.selectedDay)
++                        : root.calMode === "lanes" ? root.laneRangeLabel(root.selectedDay)
+                         : root.calMode === "day" ? Qt.formatDate(root.selectedDay, "dddd, MMMM d")
+                         : root.monthNames[root.viewMonth.getMonth()] + " " + root.viewMonth.getFullYear()
+                     color: root.cText; font.pixelSize: 20; font.weight: Theme.typography.weightMedium
+@@ -829,7 +901,7 @@ Item {
+                     Row {
+                         id: modeRow; anchors.centerIn: parent; spacing: 2
+                         Repeater {
+-                            model: [{ m: "month", t: "Month" }, { m: "week", t: "Week" }, { m: "day", t: "Day" }]
++                            model: [{ m: "month", t: "Month" }, { m: "week", t: "Week" }, { m: "day", t: "Day" }, { m: "lanes", t: "Lanes" }]
+                             Rectangle {
+                                 width: segT.implicitWidth + 18; height: 26; radius: 7
+                                 color: root.calMode === modelData.m ? root.cBlue : "transparent"
+@@ -990,6 +1062,102 @@ Item {
+                 }
+             }
+ 
++            // ── lanes: rows = days (14 from the selected day), columns = calendars or enum-field values ──
++            ColumnLayout {
++                visible: root.calMode === "lanes"
++                Layout.fillWidth: true; Layout.fillHeight: true
++                Layout.leftMargin: Theme.spacing.medium; Layout.rightMargin: Theme.spacing.medium
++                Layout.topMargin: 4; Layout.bottomMargin: Theme.spacing.medium; spacing: 8
++                Flow {
++                    Layout.fillWidth: true; spacing: 6
++                    Repeater {
++                        model: [{ key: "", label: "Calendar" }].concat(root.laneFields)
++                        delegate: Rectangle {
++                            required property var modelData
++                            readonly property bool on: modelData.key === "" ? root.effectiveLaneBy.kind === "calendar" : (root.effectiveLaneBy.kind === "field" && root.effectiveLaneBy.key === modelData.key)
++                            height: 26; radius: 13; width: laneByLbl.implicitWidth + 20
++                            color: on ? root.cSurface : "transparent"; border.width: 1; border.color: on ? root.cBlue : root.cSurface2
++                            LogosText { id: laneByLbl; textFormat: Text.PlainText; anchors.centerIn: parent; text: "By " + String(modelData.label).toLowerCase(); color: parent.on ? root.cBlue : root.cSub; font.pixelSize: 12 }
++                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.laneBy = modelData.key === "" ? { kind: "calendar" } : { kind: "field", key: modelData.key } }
++                        }
++                    }
++                }
++                LogosText { textFormat: Text.PlainText; visible: !!root.laneGrid && root.laneGrid.lanes.length === 0; text: "No calendars to show."; color: root.cSub; font.pixelSize: 13 }
++                Flickable {
++                    id: laneFlick
++                    Layout.fillWidth: true; Layout.fillHeight: true; clip: true
++                    contentWidth: laneCol.width; contentHeight: laneCol.height
++                    ScrollBar.vertical: ScrollBar {}
++                    ScrollBar.horizontal: ScrollBar {}
++                    Column {
++                        id: laneCol
++                        readonly property int dateW: 84
++                        readonly property int cellW: 170
++                        Row {
++                            Item { width: laneCol.dateW; height: 30 }
++                            Repeater {
++                                model: root.laneGrid ? root.laneGrid.lanes : []
++                                delegate: Row {
++                                    required property var modelData
++                                    width: laneCol.cellW; height: 30; spacing: 6
++                                    Rectangle { visible: root.effectiveLaneBy.kind === "calendar"; width: 10; height: 10; radius: 5; anchors.verticalCenter: parent.verticalCenter; color: root.calColor(modelData.id) }
++                                    LogosText { textFormat: Text.PlainText; text: modelData.label; color: root.cText; font.pixelSize: 13; font.weight: Theme.typography.weightMedium; elide: Text.ElideRight; width: laneCol.cellW - 20; anchors.verticalCenter: parent.verticalCenter }
++                                }
++                            }
++                        }
++                        Repeater {
++                            model: root.laneGrid ? root.laneGrid.days : []
++                            delegate: Row {
++                                id: laneDayRow
++                                required property var modelData
++                                readonly property bool isToday: root.sameDay(new Date(modelData.date), new Date())
++                                Rectangle {
++                                    width: laneCol.dateW; height: laneDayRow.rowH; color: "transparent"
++                                    Column {
++                                        anchors.verticalCenter: parent.verticalCenter; x: 4
++                                        LogosText { textFormat: Text.PlainText; text: Qt.formatDate(new Date(laneDayRow.modelData.date), "ddd"); color: laneDayRow.isToday ? root.cYellow : root.cSub; font.pixelSize: 12 }
++                                        LogosText { textFormat: Text.PlainText; text: Qt.formatDate(new Date(laneDayRow.modelData.date), "d MMM"); color: laneDayRow.isToday ? root.cYellow : root.cSub; font.pixelSize: 12 }
++                                    }
++                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { root.selectedDay = new Date(laneDayRow.modelData.date); root.calMode = "day" } }
++                                }
++                                property int rowH: Math.max(44, laneCellsRow.implicitHeight)
++                                Row {
++                                    id: laneCellsRow
++                                    Repeater {
++                                        model: laneDayRow.modelData.cells
++                                        delegate: Rectangle {
++                                            required property var modelData
++                                            width: laneCol.cellW; height: Math.max(44, laneEvCol.implicitHeight + 8)
++                                            color: "transparent"; border.width: 1; border.color: root.cSurface2
++                                            Column {
++                                                id: laneEvCol
++                                                x: 4; y: 4; width: laneCol.cellW - 8; spacing: 4
++                                                Repeater {
++                                                    model: parent.parent.modelData
++                                                    delegate: Rectangle {
++                                                        required property var modelData
++                                                        width: laneEvCol.width; height: 38; radius: 6; color: root.cSurface
++                                                        Rectangle { width: 3; height: parent.height; radius: 1; color: root.evColor(parent.modelData) }
++                                                        Column {
++                                                            x: 9; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 12
++                                                            LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; font.pixelSize: 12; color: root.cText
++                                                                text: root.clashMark(parent.parent.modelData) + root.rsvpMark(parent.parent.modelData) + (parent.parent.modelData.title || "(untitled)") }
++                                                            LogosText { textFormat: Text.PlainText; font.pixelSize: 11; color: root.cSub
++                                                                text: parent.parent.modelData.allDay ? "All day" : root.fmtTime(parent.parent.modelData.startTime) }
++                                                        }
++                                                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openEditEvent(parent.modelData) }
++                                                    }
++                                                }
++                                            }
++                                        }
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++
+             // ── day timeline: all-day band + hour-bucketed schedule for the selected day ──
+             ColumnLayout {
+                 visible: root.calMode === "day"
+-- 
+2.43.0
+
