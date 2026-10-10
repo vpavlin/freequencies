@@ -13,7 +13,7 @@ move, custom fields with badges, RSVP, owner/editor/viewer and Closed/Open/Colla
 | Feature | Mobile | Desktop | Notes |
 |---|---|---|---|
 | Clash warnings (overlapping events in a calendar) | 🧪 | 🧪 | `d93cc4e`; tests in `mobile/test/clashes.test.mjs` |
-| Filter by field value and date range | ⬜ | ⬜ | core `searchEvents` only matches title/description/location |
+| Filter by field value and date range | 🧪 | 🧪 | `33d17fd`; enum/yes-no fields, presets; tests in `mobile/test/filters.test.mjs`. Core `searchEvents` unchanged (title/description/location only) |
 | Timeline with lanes (per calendar, or per enum field such as venue) | ⬜ | ⬜ | |
 | Comments per event (ADR 0021 `ext` events) | ⬜ | ⬜ | wire change: both folds + golden vectors |
 | Poster thumbnails from image attachments | ⬜ | ⬜ | phones can fetch but not upload attachments yet |
