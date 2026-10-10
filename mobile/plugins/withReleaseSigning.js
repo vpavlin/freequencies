@@ -4,7 +4,7 @@
  * Expo's template signs BOTH debug and release with the checked-in debug
  * keystore. That key is the well-known Android debug key: not secret, and
  * shared — anyone could sign an APK your phone would accept as an update to
- * Perun. It's also a one-way door: Android identifies an app by its signing
+ * Frequencies. It's also a one-way door: Android identifies an app by its signing
  * certificate, so switching keys after publishing forces every user to
  * uninstall/reinstall.
  *
