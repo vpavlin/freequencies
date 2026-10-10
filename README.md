@@ -29,3 +29,9 @@ needs, built in the Scala repo so every Scala user gets them too.
 ## Licence
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE), at your option.
+
+## Docs
+
+- [Demo script](docs/demo.md): a six-minute walkthrough on the shared demo calendar.
+- [Integration guide](docs/integration-guide.md): how Frequencies builds on Scala, Kith and WhisperBox, desktop and Android, with code.
+- [Roadmap](docs/ROADMAP.md) and [architecture decisions](docs/adr/0000-index.md).
