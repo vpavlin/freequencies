@@ -24,7 +24,12 @@ public:
     Q_INVOKABLE QString callModule(const QString &mod, const QString &method, const QVariant &args);
     Q_INVOKABLE void callModuleAsync(const QString &mod, const QString &method, const QVariant &args, const QJSValue &cb, int timeoutMs);
 };
-QString MockLogos::callModule(const QString &, const QString &method, const QVariant &args) {
+QString MockLogos::callModule(const QString &mod, const QString &method, const QVariant &args) {
+    if (mod == "kith") {                      // the kith core: one artist book
+        if (method == "listBooks") return R"([{"id":"b1","name":"Artists","contactCount":3}])";
+        if (method == "listContacts") return R"([{"id":"k1","name":{"display":"DJ Nikola"}},{"id":"k2","name":{"display":"Mira Vex"}},{"id":"k3","name":"broken"},{"id":"k4","name":{"display":"Oskar B2B Lena"}}])";
+        return "";
+    }
     if (method != "listCalendars" && method != "listAllEvents" && method != "coreVersion") {
         QStringList parts; for (const auto &v : args.toList()) parts << v.toString();
         fprintf(stderr, "[CALL] %s(%s)\n", qPrintable(method), qPrintable(parts.join(" | ")));
@@ -89,9 +94,19 @@ int main(int argc, char **argv) {
         QJsonObject{{"id","c4"},{"name","Studio projects"},{"schema",QJsonArray{QJsonObject{{"key","status"},{"label","Status"},{"type","text"}}}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}}};
     QJsonArray comment{QJsonObject{{"ns","scala"},{"kind","comment"},{"target","n1"},{"id","x-1"},{"author","0xpromoter111111"},
                                    {"hlc",QJsonObject{{"wall",double(at(-1,14))},{"ctr",0},{"dev","0xpromoter"}}},{"data",QJsonObject{{"text","Rider confirmed, two CDJs + mixer"}}}}};
+    auto artist = [&](const QString &id, const QString &target, const QString &author, const QJsonObject &data) {
+        return QJsonObject{{"ns","xyz.frequencies"},{"kind","artist"},{"target",target},{"id",id},{"author",author},
+                           {"hlc",QJsonObject{{"wall",double(at(-1,12))},{"ctr",0},{"dev","d"}}},{"data",data}};
+    };
+    QJsonArray n1ext = comment;
+    n1ext.append(artist("a1","n1","0xme",QJsonObject{{"name","DJ Nikola"},{"contact","k1"},{"book","b1"},{"fee",250},{"currency","EUR"},{"set","23:00–01:00"},{"status","confirmed"}}));
+    n1ext.append(artist("a2","n1","0xpromoter111111",QJsonObject{{"name","Local Warmup"},{"fee",80},{"currency","EUR"},{"set","22:00–23:00"},{"status","asked"}}));
+    n1ext.append(artist("a3","n1","0xme",QJsonObject{{"name","Nobody"},{"status","cancelled"}}));
+    n1ext.append(artist("a4","n1","0xme",QJsonValue("garbage").toObject()));
+    QJsonArray n2ext{artist("b1","n2","0xme",QJsonObject{{"name","DJ Nikola (renamed)"},{"contact","k1"},{"set","02:00–04:00"},{"status","asked"}})};
     QJsonArray evs{
-        night("n1","c1",at(0),6,"Bassline Fridays","Confirmed","Cross Club",comment),
-        night("n2","c1",at(0,23),5,"Techno Lab","Hold","Ankali"),
+        night("n1","c1",at(0),6,"Bassline Fridays","Confirmed","Cross Club",n1ext),
+        night("n2","c1",at(0,23),5,"Techno Lab","Hold","Ankali",n2ext),
         night("n3","c1",at(1),6,"Dub Session","Confirmed","Cross Club"),
         night("n4","c1",at(3),5,"Afterhours","Cancelled","Fuchs2"),
         night("n5","c1",at(7),6,"Bassline Fridays #2","Hold","Cross Club"),
@@ -115,7 +130,15 @@ int main(int argc, char **argv) {
     QTimer::singleShot(2200, [&] { grab(&view, out + "/04-new-night.png"); runJs(&view, "nTitle.text = 'Test night'; nVenue.text = 'Cross Club'; createNight()"); });
     QTimer::singleShot(2600, [&] { runJs(&view, "adoptCalendar(calById('c2')); adoptCalendar(calById('c4'))"); });
     QTimer::singleShot(2800, [&] { grab(&view, out + "/05-adopt-refused.png"); });
-    QTimer::singleShot(3000, [&] { app.quit(); });
+    QTimer::singleShot(3000, [&] { runJs(&view, "laneBy = 'venue'; selected = grid.days[0].cells[0][0]"); });
+    QTimer::singleShot(3300, [&] { grab(&view, out + "/06-lineup.png"); runJs(&view, "openArtist(null)"); });
+    QTimer::singleShot(3700, [&] { runJs(&view, "aSearch.text = 'mi'"); });
+    QTimer::singleShot(3900, [&] { grab(&view, out + "/07-add-artist.png"); runJs(&view, "root.aContact = 'k2'; root.aBook = 'b1'; aName.text = 'Mira Vex'; aFee.text = '300'; aSet.text = '01:00–03:00'; saveArtist()"); });
+    QTimer::singleShot(4400, [&] { runJs(&view, "openArtist(lineupOf(selMaster)[0])"); });
+    QTimer::singleShot(4800, [&] { grab(&view, out + "/08-others-booking.png"); runJs(&view, "artistPopup.close()"); });
+    QTimer::singleShot(5000, [&] { runJs(&view, "openArtist(null); kithState = 'missing'"); });
+    QTimer::singleShot(5300, [&] { grab(&view, out + "/09-no-kith.png"); });
+    QTimer::singleShot(5500, [&] { app.quit(); });
     return app.exec();
 }
 #include "harness.moc"

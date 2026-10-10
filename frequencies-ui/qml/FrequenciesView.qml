@@ -323,6 +323,172 @@ Item {
             if (res && res.ok) root.refresh(); else root.notify("Couldn't delete the comment.", true)
         })
     }
+    // ── line-up (ADR 0004; mirrors mobile/src/app/lineup.ts) ─────────────────────
+    readonly property var bookingStatuses: ["asked", "confirmed", "cancelled"]
+    function str(v) { return typeof v === "string" ? v : "" }
+    function lineupOf(ev) {
+        var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], out = []
+        for (var i = 0; i < xs.length; i++) {
+            var x = xs[i]
+            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "artist" || !str(x.id)) continue
+            var d = (x.data && typeof x.data === "object") ? x.data : {}
+            var name = str(d.name).trim()
+            if (!name) continue
+            var fee = (typeof d.fee === "number" && isFinite(d.fee) && d.fee >= 0) ? d.fee : null
+            var st = str(d.status)
+            out.push({ id: str(x.id), author: str(x.author), name: name, contact: str(d.contact), book: str(d.book), fee: fee,
+                       currency: str(d.currency), set: str(d.set), status: bookingStatuses.indexOf(st) >= 0 ? st : "asked" })
+        }
+        out.sort(function (a, b) { return (a.set || "\uffff").localeCompare(b.set || "\uffff") || a.name.localeCompare(b.name) })
+        return out
+    }
+    function artistKey(b) { return b.contact ? "c:" + b.contact : "n:" + b.name.trim().toLowerCase() }
+    function feeLabel(b) { return b.fee === null ? "" : (b.currency ? b.fee + " " + b.currency : String(b.fee)) }
+    function feesTotal(bs) {
+        var m = {}, keys = []
+        for (var i = 0; i < bs.length; i++) {
+            var b = bs[i]
+            if (b.fee === null || b.status === "cancelled") continue
+            if (m[b.currency] === undefined) { m[b.currency] = 0; keys.push(b.currency) }
+            m[b.currency] += b.fee
+        }
+        var parts = []
+        for (var k = 0; k < keys.length; k++) parts.push(keys[k] ? m[keys[k]] + " " + keys[k] : String(m[keys[k]]))
+        return parts.join(" + ")
+    }
+    function bookingColor(st) { return st === "confirmed" ? cGreen : st === "cancelled" ? cRed : cYellow }
+    function cap(st) { return st.charAt(0).toUpperCase() + st.slice(1) }
+    function occKey(o) { return (o.seriesId || o.id) + "@" + o.occ }
+    function dayKey(t) { var d = new Date(t); return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate() }
+    // occKey → [{artist, other}] for nights on the board whose artist also plays a night that overlaps
+    // it or starts the same day.
+    readonly property var doubles: {
+        var ids = {}
+        for (var i = 0; i < freqCals.length; i++) ids[freqCals[i].id] = true
+        var src = []
+        for (var k = 0; k < events.length; k++) if (ids[events[k].calendarId]) src.push(events[k])
+        var d0 = new Date(firstDay).getTime()
+        var occs = expandEvents(src, d0 - 864e5, d0 + (nDays + 1) * 864e5)
+        var byArtist = {}, order = []
+        for (var a = 0; a < occs.length; a++) {
+            var seen = {}, lu = lineupOf(occs[a])
+            for (var b = 0; b < lu.length; b++) {
+                if (lu[b].status === "cancelled") continue
+                var key = artistKey(lu[b])
+                if (seen[key]) continue
+                seen[key] = true
+                if (!byArtist[key]) { byArtist[key] = []; order.push(key) }
+                byArtist[key].push({ night: occs[a], name: lu[b].name })
+            }
+        }
+        var out = {}
+        for (var o = 0; o < order.length; o++) {
+            var list = byArtist[order[o]]
+            for (var x = 0; x < list.length; x++) for (var y = x + 1; y < list.length; y++) {
+                var p = list[x].night, q = list[y].night
+                if (occKey(p) === occKey(q)) continue
+                var overlap = p.startTime < q.endTime && q.startTime < p.endTime
+                if (!overlap && dayKey(p.startTime) !== dayKey(q.startTime)) continue
+                ;(out[occKey(p)] = out[occKey(p)] || []).push({ artist: list[x].name, other: q })
+                ;(out[occKey(q)] = out[occKey(q)] || []).push({ artist: list[y].name, other: p })
+            }
+        }
+        return out
+    }
+    function doubleLine(d) { return "⚠ " + d.artist + " is also booked at " + (d.other.title || "another night") + ", " + Qt.formatDateTime(new Date(d.other.startTime), "d MMM hh:mm") }
+
+    // Kith (the `kith` core module): every book's contacts, read when the artist picker opens.
+    property var kithArtists: []             // [{bookId, id, name}]
+    property string kithState: ""            // "" | "loading" | "ok" | "none" | "missing"
+    function loadKith() {
+        if (kithState === "loading") return
+        kithState = "loading"
+        callVia("kith", "listBooks", [], function (rb) {
+            var books = j(rb, null)
+            if (!Array.isArray(books)) { kithState = "missing"; return }
+            if (books.length === 0) { kithArtists = []; kithState = "none"; return }
+            var acc = [], left = books.length
+            for (var i = 0; i < books.length; i++) (function (book) {
+                var bid = str(book && book.id)
+                callVia("kith", "listContacts", [bid], function (rc) {
+                    var cs = j(rc, [])
+                    if (Array.isArray(cs)) for (var k = 0; k < cs.length; k++) {
+                        var c = cs[k], nm = (c && c.name && typeof c.name === "object") ? str(c.name.display).trim() : ""
+                        if (nm && str(c.id)) acc.push({ bookId: bid, id: str(c.id), name: nm })
+                    }
+                    if (--left === 0) { acc.sort(function (a, b) { return a.name.localeCompare(b.name) }); kithArtists = acc; kithState = "ok" }
+                })
+            })(books[i])
+        })
+    }
+    function kithName(b) {
+        if (b.contact) for (var i = 0; i < kithArtists.length; i++) if (kithArtists[i].id === b.contact) return kithArtists[i].name
+        return b.name
+    }
+
+    // artist popup state
+    property string aId: ""
+    property string aContact: ""
+    property string aBook: ""
+    property string aStatus: "asked"
+    property bool aMine: true
+    property bool aCanRemove: false
+    property string aQuery: ""
+    readonly property var aMatches: {
+        var q = aQuery.trim().toLowerCase(), out = []
+        for (var i = 0; i < kithArtists.length && out.length < 12; i++) if (!q || kithArtists[i].name.toLowerCase().indexOf(q) >= 0) out.push(kithArtists[i])
+        return out
+    }
+    function openArtist(b) {
+        if (!selMaster) return
+        var lu = lineupOf(selMaster)
+        aId = b ? b.id : ""; aContact = b ? b.contact : ""; aBook = b ? b.book : ""; aStatus = b ? b.status : "asked"
+        aMine = !b || (!!selCal && b.author === selCal.authorAddr)
+        aCanRemove = !!b && (aMine || isEditorOf(selCal))
+        aQuery = ""; aSearch.text = ""
+        aName.text = b ? b.name : ""; aSet.text = b ? b.set : ""
+        aFee.text = b && b.fee !== null ? String(b.fee) : ""
+        var cur = "EUR"
+        for (var i = 0; i < lu.length; i++) if (lu[i].currency) { cur = lu[i].currency; break }
+        aCur.text = b && b.currency ? b.currency : cur
+        artistPopup.open()
+        if (!b) loadKith()
+    }
+    property bool artistBusy: false
+    function saveArtist() {
+        if (!selMaster || artistBusy) return
+        var name = aName.text.trim()
+        if (!name) { notify("Pick an artist or type a name.", true); return }
+        var feeT = aFee.text.trim().replace(",", "."), fee = feeT === "" ? null : Number(feeT)
+        if (fee !== null && !(isFinite(fee) && fee >= 0)) { notify("The fee should be a number, for example 250 or 99.50.", true); return }
+        var data = { name: name, status: aStatus }
+        if (aContact) { data.contact = aContact; data.book = aBook }
+        if (fee !== null) { data.fee = fee; data.currency = aCur.text.trim().toUpperCase() }
+        if (aSet.text.trim()) data.set = aSet.text.trim()
+        var item = { ns: "xyz.frequencies", kind: "artist", target: selMaster.id, data: data }
+        var editId = aId
+        if (editId) item.id = editId
+        artistBusy = true
+        core("postExt", [selMaster.calendarId, JSON.stringify(item)], function (r) {
+            artistBusy = false
+            var res = j(r, {})
+            // Close only the popup this save came from (it may have been reopened for another booking meanwhile).
+            if (res && res.ok) { if (aId === editId) artistPopup.close(); notify(editId ? "Booking updated" : "Added " + name); refresh() }
+            else notify("Couldn't save the booking" + (res && res.error ? ": " + res.error : ". Update the ‘scala’ package to 0.12.0+."), true)
+        })
+    }
+    function removeArtist() {
+        if (!selMaster || !aId || artistBusy) return
+        var delId = aId
+        artistBusy = true
+        core("deleteExt", [selMaster.calendarId, delId], function (r) {
+            artistBusy = false
+            var res = j(r, {})
+            if (res && res.ok) { if (aId === delId) artistPopup.close(); notify("Removed from the line-up"); refresh() }
+            else notify("Couldn't remove the booking.", true)
+        })
+    }
+
     function rsvpSummary(ev) {
         var n = { going: 0, maybe: 0, no: 0 }, r = (ev && ev.rsvps) || {}
         for (var k in r) if (n[r[k]] !== undefined) n[r[k]]++
@@ -517,8 +683,9 @@ Item {
                                                         LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; font.pixelSize: 12; color: root.cText
                                                             font.strikeout: night.status === "Cancelled"
                                                             text: night.modelData.title || "(untitled)" }
-                                                        LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; font.pixelSize: 11; color: root.cSub
-                                                            text: (night.modelData.allDay ? "All day" : Qt.formatTime(new Date(night.modelData.startTime), "hh:mm"))
+                                                        LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; font.pixelSize: 11
+                                                            color: root.doubles[root.occKey(night.modelData)] ? root.cYellow : root.cSub
+                                                            text: (root.doubles[root.occKey(night.modelData)] ? "⚠ " : "") + (night.modelData.allDay ? "All day" : Qt.formatTime(new Date(night.modelData.startTime), "hh:mm"))
                                                                 + (root.laneBy !== "venue" && root.fieldOf(night.modelData, "venue") ? " · " + root.fieldOf(night.modelData, "venue") : "")
                                                                 + (night.status && root.laneBy !== "status" ? " · " + night.status : "") }
                                                     }
@@ -603,6 +770,37 @@ Item {
                                 onClicked: if (root.canEdit(root.selMaster) && !on) root.setField("type", modelData)
                             }
                         }
+                    }
+                    // Line-up: Frequencies ext items on the night (ADR 0004); artists from Kith.
+                    RowLayout {
+                        Layout.fillWidth: true; Layout.topMargin: 6
+                        LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Line-up (" + root.lineupOf(root.selMaster).length + ")"; color: root.cFaint; font.pixelSize: 11 }
+                        LogosText { textFormat: Text.PlainText; text: "+ Artist"; color: root.cBlue; font.pixelSize: 12
+                            MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.openArtist(null) } }
+                    }
+                    LogosText { textFormat: Text.PlainText; visible: root.lineupOf(root.selMaster).length === 0; text: "No artists yet."; color: root.cSub; font.pixelSize: 12 }
+                    Repeater {
+                        model: root.lineupOf(root.selMaster)
+                        delegate: Rectangle {
+                            id: bk
+                            required property var modelData
+                            Layout.fillWidth: true; Layout.preferredHeight: bkCol.implicitHeight + 12; radius: 6; color: root.cSurface
+                            Rectangle { x: 8; anchors.verticalCenter: parent.verticalCenter; width: 8; height: 8; radius: 4; color: root.bookingColor(bk.modelData.status) }
+                            Column {
+                                id: bkCol
+                                x: 24; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 32; spacing: 1
+                                LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; color: bk.modelData.status === "cancelled" ? root.cSub : root.cText; font.pixelSize: 13
+                                    font.strikeout: bk.modelData.status === "cancelled"; text: root.kithName(bk.modelData) }
+                                LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; color: root.cSub; font.pixelSize: 11
+                                    text: [bk.modelData.set, root.cap(bk.modelData.status), root.feeLabel(bk.modelData), bk.modelData.contact ? "" : "not in Kith"].filter(function (x) { return !!x }).join(" · ") }
+                            }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openArtist(bk.modelData) }
+                        }
+                    }
+                    LogosText { textFormat: Text.PlainText; visible: root.feesTotal(root.lineupOf(root.selMaster)) !== ""; text: "Fees: " + root.feesTotal(root.lineupOf(root.selMaster)); color: root.cSub; font.pixelSize: 12 }
+                    Repeater {
+                        model: root.selected ? (root.doubles[root.occKey(root.selected)] || []) : []
+                        delegate: LogosText { required property var modelData; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cYellow; font.pixelSize: 12; text: root.doubleLine(modelData) }
                     }
                     LogosText { textFormat: Text.PlainText; visible: !!root.selMaster && !!root.selMaster.description; text: "Notes"; color: root.cFaint; font.pixelSize: 11; Layout.topMargin: 6 }
                     LogosText { textFormat: Text.PlainText; visible: !!root.selMaster && !!root.selMaster.description; text: root.selMaster ? (root.selMaster.description || "") : ""; color: root.cText; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true }
@@ -720,6 +918,67 @@ Item {
                 Item { Layout.fillWidth: true }
                 Btn { text: "Cancel"; onClicked: newPopup.close() }
                 Btn { text: root.creating ? "Adding…" : "Add night"; primary: true; enabled_: !root.creating; onClicked: root.createNight() }
+            }
+        }
+    }
+
+    // ── artist booking ───────────────────────────────────────────────────────────
+    Popup {
+        id: artistPopup
+        anchors.centerIn: Overlay.overlay
+        width: 440; modal: true; padding: 20
+        background: Rectangle { radius: 12; color: root.cSurface; border.width: 1; border.color: root.cSurface2 }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 8
+            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; color: root.cText; font.pixelSize: 18; font.weight: Theme.typography.weightMedium
+                text: root.aId ? root.kithName({ contact: root.aContact, name: aName.text }) : "Add an artist" }
+            LogosText { textFormat: Text.PlainText; visible: !root.aMine; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cFaint; font.pixelSize: 12
+                text: "Only the person who added this booking can change it. Editors can remove it." }
+            LogosText { textFormat: Text.PlainText; visible: !root.aId; text: "From Kith"; color: root.cFaint; font.pixelSize: 11 }
+            LogosText { textFormat: Text.PlainText; visible: !root.aId && root.kithState !== "ok"; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
+                text: root.kithState === "loading" ? "Reading Kith…"
+                    : root.kithState === "missing" ? "Kith isn't installed or isn't answering. Install the ‘kith’ package to pick artists from your crew's address book, or type a name below."
+                    : "No Kith books yet. Join your crew's artist book in Kith, or type a name below." }
+            Input { id: aSearch; visible: !root.aId && root.kithState === "ok"; Layout.fillWidth: true; placeholderText: "Search artists"; color: root.cText; font.pixelSize: 13; onTextChanged: root.aQuery = text }
+            Flow {
+                visible: !root.aId && root.kithState === "ok"; Layout.fillWidth: true; spacing: 6
+                Repeater {
+                    model: root.aMatches
+                    delegate: Chip { required property var modelData; text: modelData.name; on: root.aContact === modelData.id
+                        onClicked: { root.aContact = modelData.id; root.aBook = modelData.bookId; aName.text = modelData.name } }
+                }
+            }
+            LogosText { textFormat: Text.PlainText; text: "Name" + (root.aContact ? "  ·  linked to Kith" : ""); color: root.cFaint; font.pixelSize: 11 }
+            Input { id: aName; Layout.fillWidth: true; enabled: root.aMine; placeholderText: "Artist name"; color: root.cText; font.pixelSize: 13
+                // Typing a different name unlinks the Kith contact.
+                onTextEdited: { root.aContact = ""; root.aBook = "" } }
+            LogosText { textFormat: Text.PlainText; text: "Set"; color: root.cFaint; font.pixelSize: 11 }
+            Input { id: aSet; Layout.fillWidth: true; enabled: root.aMine; placeholderText: "e.g. 23:00–01:00"; color: root.cText; font.pixelSize: 13 }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                ColumnLayout { Layout.fillWidth: true; spacing: 4
+                    LogosText { textFormat: Text.PlainText; text: "Fee"; color: root.cFaint; font.pixelSize: 11 }
+                    Input { id: aFee; Layout.fillWidth: true; enabled: root.aMine; placeholderText: "—"; color: root.cText; font.pixelSize: 13 } }
+                ColumnLayout { spacing: 4
+                    LogosText { textFormat: Text.PlainText; text: "Currency"; color: root.cFaint; font.pixelSize: 11 }
+                    Input { id: aCur; Layout.preferredWidth: 80; enabled: root.aMine; maximumLength: 4; color: root.cText; font.pixelSize: 13 } }
+            }
+            LogosText { textFormat: Text.PlainText; text: "Everyone in this calendar can see fees."; color: root.cSub; font.pixelSize: 11 }
+            LogosText { textFormat: Text.PlainText; text: "Status"; color: root.cFaint; font.pixelSize: 11 }
+            Flow {
+                Layout.fillWidth: true; spacing: 6
+                Repeater {
+                    model: root.bookingStatuses
+                    delegate: Chip { required property var modelData; text: root.cap(modelData); accent: root.bookingColor(modelData); on: root.aStatus === modelData
+                        opacity: root.aMine ? 1 : 0.5; onClicked: if (root.aMine) root.aStatus = modelData }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true; Layout.topMargin: 8; spacing: 8
+                Btn { visible: root.aCanRemove; text: "Remove"; enabled_: !root.artistBusy; onClicked: root.removeArtist() }
+                Item { Layout.fillWidth: true }
+                Btn { text: root.aMine ? "Cancel" : "Close"; onClicked: artistPopup.close() }
+                Btn { visible: root.aMine; text: root.artistBusy ? "Saving…" : (root.aId ? "Save" : "Add"); primary: true; enabled_: !root.artistBusy; onClicked: root.saveArtist() }
             }
         }
     }

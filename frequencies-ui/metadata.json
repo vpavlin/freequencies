@@ -2,13 +2,14 @@
   "name": "frequencies_ui",
   "display_name": "Frequencies",
   "icon": "icon.png",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "ui_qml",
   "category": "general",
-  "description": "Frequencies: organise club nights (venues, status, comments) on top of the Scala calendar",
+  "description": "Frequencies: organise club nights (venues, status, line-up and fees, comments) on top of the Scala calendar, with artists from Kith",
   "view": "qml/FrequenciesView.qml",
   "dependencies": [
-    "scala"
+    "scala",
+    "kith"
   ],
   "nix": {
     "packages": {
