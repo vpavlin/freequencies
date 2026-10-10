@@ -1,3 +1,6 @@
 [submodule "mobile/src/lib"]
 	path = mobile/src/lib
 	url = https://github.com/vpavlin/scala-sdk
+[submodule "mobile/src/kith"]
+	path = mobile/src/kith
+	url = https://github.com/vpavlin/kith-sdk

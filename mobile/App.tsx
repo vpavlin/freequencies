@@ -3,6 +3,8 @@
 // Built on scala-sdk (mounted at src/lib): the same calendars, fields and comments as the Scala app
 // and the desktop Frequencies view (ADR 0002). A night is a Scala event; Frequencies data is the
 // calendar's Status / Venue / Type fields plus Scala's comments (ext items, ns "scala").
+// Artists come from Kith (kith-sdk, mounted at src/kith); each night's line-up and fees are
+// Frequencies ext items on the night (ADR 0004, src/app/lineup.ts).
 // Sync goes through the phone's shared Loam node only (no embedded node): Loam must be installed.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +22,9 @@ import {
 import { identityForCalendar } from "./src/lib/identities";
 import { expandEvents } from "./src/lib/recur";
 import { SharedNodeStatus } from "./src/lib/loam-transport-pkg/src/SharedNodeStatus";
+import * as kith from "./src/kith/contacts";
+import { store as kithStore, Book as KithBook, Contact as KithContact } from "./src/kith/store";
+import { lineupOf, doubleBookings, feeLabel, totalFees, Booking, BookingStatus, STATUSES as BOOKING_STATUSES, NS, KIND_ARTIST } from "./src/app/lineup";
 
 // Scala's Catppuccin tokens, so the two apps look like one family.
 const C = {
@@ -62,14 +67,31 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  // Kith: the artist books this phone has joined and their contacts (ADR 0004).
+  const [kithBooks, setKithBooks] = useState<KithBook[]>([]);
+  const [artists, setArtists] = useState<{ bookId: string; contact: KithContact }[]>([]);
+  const reloadKith = useCallback(async () => {
+    try {
+      const [bs, cs] = await Promise.all([kithStore.listBooks(), kithStore.allContacts()]);
+      setKithBooks(bs);
+      setArtists(cs.filter((c) => c.contact && c.contact.name && c.contact.name.display));
+    } catch { /* a broken Kith book must not take the board down */ }
+  }, []);
+
   // Name ourselves to Loam BEFORE anything touches the transport (the shared backend is chosen once).
+  // Both engines (Scala's and Kith's) register as "frequencies" and share one transport.
   useEffect(() => {
     setAppId("frequencies");
-    reload();
+    kith.setAppId("frequencies");
+    reload(); reloadKith();
     const off = onChange(() => { reload(); });
-    startSyncing(true, setSyncStatus).catch((e) => setSyncStatus("sync error: " + msg(e)));
-    return off;
-  }, [reload]);
+    const offK = kith.onChange(() => { reloadKith(); });
+    startSyncing(true, setSyncStatus)
+      .catch((e) => setSyncStatus("sync error: " + msg(e)))
+      .then(() => kith.startSyncing(true))
+      .catch(() => { /* Kith sync is optional: the line-up works with plain names */ });
+    return () => { off(); offK(); };
+  }, [reload, reloadKith]);
 
   // The address that authors on each calendar (its bound identity), for permission checks.
   useEffect(() => {
@@ -108,6 +130,10 @@ export default function App() {
     const ids = new Set(freqCals.map((c) => c.id));
     return expandEvents(events.filter((e) => ids.has(e.calendarId)), firstDay, firstDay + 14 * DAY - 1) as Occ[];
   }, [events, freqCals, firstDay]);
+  const doubles = useMemo(() => {
+    const byId = new Map(events.map((e) => [e.id, e as Occ]));
+    return doubleBookings(nights.map((n) => ({ key: `${n.id}@${n.occ}`, startTime: n.startTime, endTime: n.endTime, title: n.title, ext: byId.get(n.id)?.ext })));
+  }, [nights, events]);
   const venues = useMemo(() => [...new Set(nights.map((n) => fieldOf(n, "venue")).filter(Boolean))].sort(), [nights]);
   const days = useMemo(() => {
     const shown = nights.filter((n) => (!venueFilter || fieldOf(n, "venue") === venueFilter) && (!statusFilter || fieldOf(n, "status") === statusFilter));
@@ -152,6 +178,68 @@ export default function App() {
     catch (e) { Alert.alert("Couldn't post the comment", msg(e)); }
     finally { commentBusy.current = false; }
   };
+  // ── line-up (ADR 0004) ──
+  const lineup = useMemo(() => lineupOf(selMaster || {}), [selMaster]);
+  const [artistOpen, setArtistOpen] = useState(false);
+  const blankDraft = { id: "", name: "", contact: "", book: "", fee: "", currency: "EUR", set: "", status: "asked" as BookingStatus };
+  const [ad, setAd] = useState(blankDraft);
+  const [artistQuery, setArtistQuery] = useState("");
+  const artistBusy = useRef(false);
+  const openArtist = (b?: Booking) => {
+    setAd(b ? { id: b.id, name: b.name, contact: b.contact, book: b.book, fee: b.fee == null ? "" : String(b.fee), currency: b.currency || "EUR", set: b.set, status: b.status }
+      : { ...blankDraft, currency: lineup.find((x) => x.currency)?.currency || "EUR" });
+    setArtistQuery("");
+    setArtistOpen(true);
+  };
+  const kithName = (b: { contact: string; name: string }) => artists.find((a) => a.contact.id === b.contact)?.contact.name.display || b.name;
+  const matches = useMemo(() => {
+    const q = artistQuery.trim().toLowerCase();
+    if (!q) return artists.slice(0, 8);
+    return artists.filter((a) => a.contact.name.display.toLowerCase().includes(q)).slice(0, 8);
+  }, [artists, artistQuery]);
+  const saveArtist = async () => {
+    if (!selMaster || artistBusy.current) return;
+    const name = ad.name.trim();
+    if (!name) { Alert.alert("Pick an artist or type a name"); return; }
+    const feeT = ad.fee.trim().replace(",", ".");
+    const fee = feeT === "" ? null : Number(feeT);
+    if (fee != null && !(isFinite(fee) && fee >= 0)) { Alert.alert("The fee should be a number", "For example 250 or 99.50."); return; }
+    const data: Record<string, unknown> = { name, status: ad.status };
+    if (ad.contact) { data.contact = ad.contact; data.book = ad.book; }
+    if (fee != null) { data.fee = fee; data.currency = ad.currency.trim().toUpperCase(); }
+    if (ad.set.trim()) data.set = ad.set.trim();
+    artistBusy.current = true;
+    try {
+      await postExt(selMaster.calendarId, { ns: NS, kind: KIND_ARTIST, target: selMaster.id, id: ad.id || undefined, data });
+      setArtistOpen(false); toast(ad.id ? "Booking updated" : "Artist added"); await reload();
+    } catch (e) { Alert.alert("Couldn't save the booking", msg(e)); }
+    finally { artistBusy.current = false; }
+  };
+  const removeArtist = (b: Booking) => {
+    if (!selMaster) return;
+    Alert.alert(`Remove ${b.name}?`, "They come off this night's line-up for everyone.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: () => { deleteExt(selMaster.calendarId, b.id).then(() => { setArtistOpen(false); toast("Removed"); return reload(); }).catch((e) => Alert.alert("Couldn't remove", msg(e))); } },
+    ]);
+  };
+  const bookingColor = (st: BookingStatus) => (st === "confirmed" ? C.green : st === "cancelled" ? C.red : C.yellow);
+  const statusWord = (st: BookingStatus) => st.charAt(0).toUpperCase() + st.slice(1);
+
+  // ── Kith books (Calendars screen) ──
+  const [kithLink, setKithLink] = useState("");
+  const joinKith = async () => {
+    const link = kithLink.trim();
+    if (!link || busy) return;
+    setBusy("kith");
+    try {
+      const b = await kith.joinFromInvite(link);
+      if (!b) { Alert.alert("That link didn't work", "Paste a kith://join link from the Kith app (share a book there)."); return; }
+      setKithLink(""); toast(`Joined “${b.name}”`); await reloadKith();
+      kith.startSyncing(true).catch(() => {});
+    } catch (e) { Alert.alert("Couldn't join the Kith book", msg(e)); }
+    finally { setBusy(""); }
+  };
+
   const rsvpLine = (ev?: Occ | null) => {
     const n: Record<string, number> = { going: 0, maybe: 0, no: 0 };
     for (const v of Object.values(ev?.rsvps || {})) if (n[v] !== undefined) n[v]++;
@@ -292,6 +380,7 @@ export default function App() {
                           <View style={{ flex: 1 }}>
                             <Text style={[s.nightT, st === "Cancelled" && { textDecorationLine: "line-through", color: C.sub }]} numberOfLines={1}>{n.title || "(untitled)"}</Text>
                             <Text style={s.nightS} numberOfLines={1}>{fmtTime(n.startTime)}{fieldOf(n, "venue") ? ` · ${fieldOf(n, "venue")}` : ""}{st ? ` · ${st}` : ""}</Text>
+                            {doubles.has(`${n.id}@${n.occ}`) && <Text style={s.warn} numberOfLines={1}>⚠ {doubles.get(`${n.id}@${n.occ}`)![0].artist} is also booked at {doubles.get(`${n.id}@${n.occ}`)![0].other.title || "another night"}</Text>}
                           </View>
                         </Pressable>
                       );
@@ -336,6 +425,24 @@ export default function App() {
                     <View style={s.wrap}>{TYPES.map((t) => (
                       <Chip key={t} label={t} on={fieldOf(selMaster, "type") === t} onPress={() => { if (canEdit(selMaster) && fieldOf(selMaster, "type") !== t) setField("type", t); }} />
                     ))}</View>
+                    <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                      <Text style={[s.label, { flex: 1 }]}>Line-up ({lineup.length})</Text>
+                      <Pressable hitSlop={8} onPress={() => openArtist()} style={{ marginBottom: 6 }}><Text style={{ color: C.blue, fontSize: 13 }}>+ Artist</Text></Pressable>
+                    </View>
+                    {lineup.length === 0 && <Text style={s.sub}>No artists yet.</Text>}
+                    {lineup.map((b) => (
+                      <Pressable key={b.id} onPress={() => openArtist(b)} style={s.booking}>
+                        <View style={[s.dot, { backgroundColor: bookingColor(b.status) }]} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.body, b.status === "cancelled" && { textDecorationLine: "line-through", color: C.sub }]} numberOfLines={1}>{kithName(b)}</Text>
+                          <Text style={s.sub} numberOfLines={1}>{[b.set, statusWord(b.status), feeLabel(b), b.contact ? "" : "not in Kith"].filter(Boolean).join(" · ")}</Text>
+                        </View>
+                      </Pressable>
+                    ))}
+                    {totalFees(lineup).length > 0 && <Text style={s.sub}>Fees: {totalFees(lineup).map((t) => (t.currency ? `${t.total} ${t.currency}` : String(t.total))).join(" + ")}</Text>}
+                    {selOcc && doubles.get(`${selOcc.id}@${selOcc.occ}`)?.map((d, i) => (
+                      <Text key={i} style={s.warn}>⚠ {d.artist} is also booked at {d.other.title || "another night"}, {new Date(d.other.startTime).toLocaleDateString(undefined, { day: "numeric", month: "short" })} {fmtTime(d.other.startTime)}</Text>
+                    ))}
                     {!!selMaster.description && (<><Text style={s.label}>Notes</Text><Text style={s.body}>{selMaster.description}</Text></>)}
                     <Text style={[s.sub, { marginTop: 10 }]}>Attendance: {rsvpLine(selMaster)}</Text>
                     <Text style={s.label}>Comments ({comments.length})</Text>
@@ -360,6 +467,60 @@ export default function App() {
                 )}
               </View>
             </View>
+          </Modal>
+
+          {/* ── artist booking ── */}
+          <Modal visible={artistOpen} transparent animationType="slide" onRequestClose={() => setArtistOpen(false)}>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.sheetWrap}>
+              <View style={s.sheet}>
+                {(() => {
+                  const editing = lineup.find((b) => b.id === ad.id);
+                  const mine = !editing || editing.author === meFor[selMaster?.calendarId || ""];
+                  const canRemove = !!editing && (mine || isEditorOf(cals.find((c) => c.id === selMaster?.calendarId)));
+                  return (
+                    <ScrollView keyboardShouldPersistTaps="handled">
+                      <View style={{ flexDirection: "row" }}>
+                        <Text style={[s.sheetTitle, { flex: 1 }]}>{editing ? kithName(editing) : "Add an artist"}</Text>
+                        <Pressable hitSlop={10} onPress={() => setArtistOpen(false)}><Text style={s.close}>✕</Text></Pressable>
+                      </View>
+                      {!mine && <Text style={s.readonly}>Only the person who added this booking can change it. Editors can remove it.</Text>}
+                      {!editing && (<>
+                        <Text style={s.label}>From Kith</Text>
+                        {kithBooks.length === 0 ? (
+                          <Text style={s.sub}>No Kith books on this phone. Join your crew's artist book under Calendars, or type a name below.</Text>
+                        ) : (<>
+                          <TextInput style={s.input} value={artistQuery} onChangeText={setArtistQuery} placeholder="Search artists" placeholderTextColor={C.faint} />
+                          <View style={[s.wrap, { marginTop: 8 }]}>
+                            {matches.map((a) => (
+                              <Chip key={a.contact.id} label={a.contact.name.display} on={ad.contact === a.contact.id}
+                                onPress={() => setAd({ ...ad, contact: a.contact.id, book: a.bookId, name: a.contact.name.display })} />
+                            ))}
+                            {matches.length === 0 && <Text style={s.sub}>No match in Kith.</Text>}
+                          </View>
+                        </>)}
+                      </>)}
+                      <Text style={s.label}>Name</Text>
+                      <TextInput style={s.input} value={ad.name} editable={mine} onChangeText={(t) => setAd({ ...ad, name: t, ...(ad.contact && t !== ad.name ? { contact: "", book: "" } : {}) })} placeholder="Artist name" placeholderTextColor={C.faint} />
+                      {!!ad.contact && <Text style={s.sub}>Linked to Kith</Text>}
+                      <Text style={s.label}>Set</Text>
+                      <TextInput style={s.input} value={ad.set} editable={mine} onChangeText={(t) => setAd({ ...ad, set: t })} placeholder="e.g. 23:00–01:00" placeholderTextColor={C.faint} />
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <View style={{ flex: 2 }}><Text style={s.label}>Fee</Text><TextInput style={s.input} value={ad.fee} editable={mine} onChangeText={(t) => setAd({ ...ad, fee: t })} keyboardType="decimal-pad" placeholder="—" placeholderTextColor={C.faint} /></View>
+                        <View style={{ flex: 1 }}><Text style={s.label}>Currency</Text><TextInput style={s.input} value={ad.currency} editable={mine} onChangeText={(t) => setAd({ ...ad, currency: t })} autoCapitalize="characters" maxLength={4} /></View>
+                      </View>
+                      <Text style={s.sub}>Everyone in this calendar can see fees.</Text>
+                      <Text style={s.label}>Status</Text>
+                      <View style={s.wrap}>{BOOKING_STATUSES.map((st) => <Chip key={st} label={statusWord(st)} on={ad.status === st} color={bookingColor(st)} onPress={() => { if (mine) setAd({ ...ad, status: st }); }} />)}</View>
+                      <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                        {canRemove ? <Pressable onPress={() => editing && removeArtist(editing)} style={[s.secondaryBtn, { flex: 1 }]}><Text style={[s.secondaryBtnT, { color: C.red }]}>Remove</Text></Pressable>
+                          : <Pressable onPress={() => setArtistOpen(false)} style={[s.secondaryBtn, { flex: 1 }]}><Text style={s.secondaryBtnT}>Cancel</Text></Pressable>}
+                        {mine && <Pressable onPress={saveArtist} style={[s.primaryBtn, { flex: 1 }]}><Text style={s.primaryBtnT}>{editing ? "Save" : "Add"}</Text></Pressable>}
+                      </View>
+                    </ScrollView>
+                  );
+                })()}
+              </View>
+            </KeyboardAvoidingView>
           </Modal>
 
           {/* ── new night ── */}
@@ -425,6 +586,13 @@ export default function App() {
                       </View>
                     );
                   })}
+                  <Text style={s.label}>Artist books (Kith)</Text>
+                  {kithBooks.length === 0 ? <Text style={s.sub}>None yet. In the Kith app, share your crew's artist book and paste its link here.</Text>
+                    : kithBooks.map((b) => <Text key={b.id} style={s.calRow}>● {b.name}{typeof b.contactCount === "number" ? ` (${b.contactCount})` : ""}</Text>)}
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                    <TextInput style={[s.input, { flex: 1 }]} value={kithLink} onChangeText={setKithLink} placeholder="kith://join?…" placeholderTextColor={C.faint} autoCapitalize="none" />
+                    <Pressable onPress={joinKith} disabled={!kithLink.trim() || !!busy} style={[s.smallBtn, (!kithLink.trim() || !!busy) && { opacity: 0.4 }]}><Text style={s.smallBtnT}>{busy === "kith" ? "…" : "Join"}</Text></Pressable>
+                  </View>
                   <Text style={[s.sub, { marginTop: 18 }]}>Nights are Scala events: they also show in the Scala app and on desktop, and comments are shared. Syncing needs the Loam app on this phone.</Text>
                 </ScrollView>
               </View>
@@ -481,4 +649,7 @@ const s = StyleSheet.create({
   body: { color: C.text, fontSize: 14 },
   comment: { borderLeftWidth: 2, borderLeftColor: C.surface2, paddingLeft: 8, marginTop: 8 },
   calRow: { color: C.text, fontSize: 14, marginTop: 4 },
+  booking: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderRadius: 8, padding: 10, marginTop: 6 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  warn: { color: C.yellow, fontSize: 12, marginTop: 4 },
 });
