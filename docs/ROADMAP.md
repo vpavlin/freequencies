@@ -14,11 +14,14 @@ move, custom fields with badges, RSVP, owner/editor/viewer and Closed/Open/Colla
 |---|---|---|---|
 | Clash warnings (overlapping events in a calendar) | 🧪 | 🧪 | `d93cc4e`; tests in `mobile/test/clashes.test.mjs` |
 | Filter by field value and date range | 🧪 | 🧪 | `33d17fd`; enum/yes-no fields, presets; tests in `mobile/test/filters.test.mjs`. Core `searchEvents` unchanged (title/description/location only) |
-| Timeline with lanes (per calendar, or per enum field such as venue) | ⬜ | ⬜ | |
+| Timeline with lanes (per calendar, or per enum field such as venue) | 🧪 | 🧪 | `2cdee83`; 14 days, "By calendar / By <field>"; tests in `mobile/test/lanes.test.mjs` |
 | Comments per event (ADR 0021 `ext` events) | ⬜ | ⬜ | wire change: both folds + golden vectors |
 | Poster thumbnails from image attachments | ⬜ | ⬜ | phones can fetch but not upload attachments yet |
 | Desktop reminders (view calls `getPendingReminders`) | n/a | ⬜ | mobile already schedules its own |
 | Public "community" tier | ⬜ | ⬜ | needs a key-publishing design first |
+
+**Test build:** scala_ui 0.12.0 (desktop view, includes the intents work from `feat/intents`) and
+Android 0.9.117 contain the three features above.
 
 ## 2. Link the modules we have
 
