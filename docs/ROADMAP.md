@@ -28,9 +28,12 @@ and Android 0.9.118 (vc139) on the Loam F-Droid test repo. Not yet on apps.vpavl
 
 | Feature | Status | Notes |
 |---|---|---|
-| Kith: artists as contacts, with a `fee` field | ⬜ | |
+| Kith: artists from a Kith book; line-up, set times and fees per night (ADR 0004) | 🧪 | fees live on the night, not on the contact; Android uses [kith-sdk](https://github.com/vpavlin/kith-sdk) |
 | KYM: a budget per night, linked to the event id | ⬜ | |
-| WhisperBox forms: artist booking requests, crew sign-up, guest lists → Scala events | ⬜ | design requested from the WhisperBox agent |
+| WhisperBox forms: artist booking requests, crew sign-up, guest lists → Scala events | 🔨 | WhisperBox is becoming a library (whisperbox-sdk); a night links its forms as `ext` items (kind `form`) |
+
+**Test build (2026-10-10):** desktop `frequencies_ui` 0.2.0 (needs `scala` 0.12.1 + `kith` 0.3.1) on the LAN 0.3
+repo; Android 0.2.0 (vc2) on the Loam F-Droid test repo.
 
 ## 3. New modules
 
@@ -49,6 +52,6 @@ and Android 0.9.118 (vc139) on the Loam F-Droid test repo. Not yet on apps.vpavl
 | Nights board = the Lanes view (columns by venue / status / calendar) | 🧪 | in `frequencies_ui`; logic from `prototypes/lanes` |
 | Android app (ADR 0003): list board, night sheet, new night, calendars (create / join / Use for Frequencies) | 🧪 | 0.1.0 (vc1) on the Loam F-Droid test repo; arm64; needs the Loam app |
 | Event page linking artists, crew, budget, tasks, gear | ⬜ | |
-| "Same artist booked twice" warnings | ⬜ | |
+| "Same artist booked twice" warnings | 🧪 | same Kith contact (or name) on overlapping or same-day nights; `mobile/src/app/lineup.ts` |
 | Analytics (events per month, attendance, revenue) | ⬜ | |
 | Integrations: tickets, weather, venue maps | ⬜ | |
