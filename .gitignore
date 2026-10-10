@@ -1,0 +1,6 @@
+frequencies-ui/qml-harness/harness
+frequencies-ui/qml-harness/harness.moc
+frequencies-ui/qml-harness/shots/
+frequencies-ui/qml-harness/render.out
+frequencies-ui/qml-harness/render.err.log
+frequencies-ui/result*

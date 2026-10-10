@@ -1,0 +1,26 @@
+{
+  "name": "frequencies_ui",
+  "display_name": "Frequencies",
+  "icon": "icon.png",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "general",
+  "description": "Frequencies: organise club nights (venues, status, comments) on top of the Scala calendar",
+  "view": "qml/FrequenciesView.qml",
+  "dependencies": [
+    "scala"
+  ],
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}
