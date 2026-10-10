@@ -1,0 +1,26 @@
+{
+  "name": "scala_agenda_example",
+  "display_name": "Scala Agenda (example)",
+  "icon": "icon.png",
+  "version": "0.1.0",
+  "type": "ui_qml",
+  "category": "general",
+  "description": "Example: a pure-QML Basecamp view that reads Scala's calendars and posts a comment on an event, through the scala core module",
+  "view": "qml/AgendaView.qml",
+  "dependencies": [
+    "scala"
+  ],
+  "nix": {
+    "packages": {
+      "build": [],
+      "runtime": []
+    },
+    "external_libraries": [],
+    "cmake": {
+      "find_packages": [],
+      "extra_sources": [],
+      "extra_include_dirs": [],
+      "extra_link_libraries": []
+    }
+  }
+}

@@ -167,6 +167,9 @@ Share one set of form templates between platforms: Frequencies generates the des
 
 ## 5. Where to look
 
+- **A minimal example to copy:** [`examples/scala-agenda`](../examples/scala-agenda): a complete
+  Basecamp module in one QML file that reads Scala's calendars and posts a comment.
+
 - Frequencies ADRs: 0002 (desktop view over Scala), 0003 (Android on scala-sdk), 0004 (artists from
   Kith), 0005 (forms from WhisperBox), 0006 (budget from KYM, proposed).
 - Scala: `docs/sdk.md`, ADR 0005 (custom fields), 0021 (`ext` items), 0024 (comments), 0025 (scala-sdk).
