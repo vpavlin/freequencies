@@ -6,6 +6,8 @@ const { getDefaultConfig } = require("expo/metro-config");
 const path = require("path");
 
 const config = getDefaultConfig(__dirname);
+// whisperbox-sdk (src/whisperbox) ships its protocol as plain .mjs shared with its desktop core and tests.
+if (!config.resolver.sourceExts.includes("mjs")) config.resolver.sourceExts.push("mjs");
 const KITH_LT = path.join(__dirname, "src", "kith", "loam-transport-pkg") + path.sep;
 const LIB_LT = path.join(__dirname, "src", "lib", "loam-transport-pkg") + path.sep;
 

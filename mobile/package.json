@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "prebuild": "expo prebuild --platform android",
     "tsc": "tsc --noEmit",
-    "test": "node --experimental-strip-types --no-warnings test/lineup.test.ts && node test/one-transport.test.cjs"
+    "test": "node --experimental-strip-types --no-warnings test/lineup.test.ts && node test/one-transport.test.cjs",
+    "postinstall": "npm --prefix src/whisperbox install --no-save --ignore-scripts --no-audit --no-fund"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
@@ -21,6 +22,7 @@
     "expo-camera": "~57.0.1",
     "expo-clipboard": "~57.0.1",
     "expo-crypto": "~57.0.0",
+    "expo-file-system": "~57.0.7",
     "expo-secure-store": "~57.0.0",
     "expo-status-bar": "~57.0.0",
     "keycard-sdk": "^3.1.9",

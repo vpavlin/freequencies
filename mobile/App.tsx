@@ -4,11 +4,13 @@
 // and the desktop Frequencies view (ADR 0002). A night is a Scala event; Frequencies data is the
 // calendar's Status / Venue / Type fields plus Scala's comments (ext items, ns "scala").
 // Artists come from Kith (kith-sdk, mounted at src/kith); each night's line-up and fees are
-// Frequencies ext items on the night (ADR 0004, src/app/lineup.ts).
+// Frequencies ext items on the night (ADR 0004, src/app/lineup.ts). Booking / crew / guest-list /
+// feedback forms are WhisperBox forms (whisperbox-sdk at src/whisperbox) linked to the night as ext
+// items, kind "form" (ADR 0005). All three engines share the one loam-transport.
 // Sync goes through the phone's shared Loam node only (no embedded node): Loam must be installed.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ToastAndroid,
+  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Modal, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, ToastAndroid, Share,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
@@ -24,6 +26,10 @@ import { expandEvents } from "./src/lib/recur";
 import { SharedNodeStatus } from "./src/lib/loam-transport-pkg/src/SharedNodeStatus";
 import * as kith from "./src/kith/contacts";
 import { store as kithStore, Book as KithBook, Contact as KithContact } from "./src/kith/store";
+import * as transport from "./src/lib/loam-transport";
+import { setAppId as wbSetAppId, createWhisperbox } from "./src/whisperbox/rn";
+// @ts-ignore - plain ESM shared with WhisperBox's desktop core
+import { template as wbTemplate } from "./src/whisperbox/templates/templates.mjs";
 import { lineupOf, doubleBookings, feeLabel, totalFees, Booking, BookingStatus, STATUSES as BOOKING_STATUSES, NS, KIND_ARTIST } from "./src/app/lineup";
 
 // Scala's Catppuccin tokens, so the two apps look like one family.
@@ -51,6 +57,30 @@ const fmtTime = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour:
 const toast = (m: string) => { if (Platform.OS === "android") ToastAndroid.show(m, ToastAndroid.SHORT); };
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+// One WhisperBox client for the app, on the scala-sdk transport (registered as "frequencies").
+wbSetAppId("frequencies");
+const wb = createWhisperbox({ transport: transport as any });
+
+const PURPOSES: { id: string; label: string }[] = [
+  { id: "booking", label: "Artist booking" }, { id: "crew", label: "Crew sign-up" },
+  { id: "guestlist", label: "Guest list" }, { id: "feedback", label: "Feedback" },
+];
+const purposeLabel = (p: string) => PURPOSES.find((x) => x.id === p)?.label || "Form";
+type NightForm = { id: string; author: string; formId: string; uri: string; purpose: string; title: string };
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+// Forms linked to a night: ext items ns "xyz.frequencies" kind "form" (other members write these: typed reads).
+function formsOf(ev: any): NightForm[] {
+  const xs = Array.isArray(ev?.ext) ? ev.ext : [];
+  const out: NightForm[] = [];
+  for (const x of xs) {
+    if (!x || x.ns !== NS || x.kind !== "form" || !str(x.id)) continue;
+    const d = x.data && typeof x.data === "object" ? x.data : {};
+    if (!str(d.formId)) continue;
+    out.push({ id: str(x.id), author: str(x.author), formId: str(d.formId), uri: str(d.uri), purpose: str(d.purpose), title: str(d.title) });
+  }
+  return out;
+}
+
 type Occ = CalEvent & { seriesId?: string; occ?: number; ext?: any[]; rsvps?: Record<string, string> };
 
 export default function App() {
@@ -67,6 +97,7 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  const [wbTick, setWbTick] = useState(0);
   // Kith: the artist books this phone has joined and their contacts (ADR 0004).
   const [kithBooks, setKithBooks] = useState<KithBook[]>([]);
   const [artists, setArtists] = useState<{ bookId: string; contact: KithContact }[]>([]);
@@ -86,11 +117,14 @@ export default function App() {
     reload(); reloadKith();
     const off = onChange(() => { reload(); });
     const offK = kith.onChange(() => { reloadKith(); });
+    const offW = wb.client.subscribe(() => setWbTick((n) => n + 1));
     startSyncing(true, setSyncStatus)
       .catch((e) => setSyncStatus("sync error: " + msg(e)))
       .then(() => kith.startSyncing(true))
-      .catch(() => { /* Kith sync is optional: the line-up works with plain names */ });
-    return () => { off(); offK(); };
+      .catch(() => { /* Kith sync is optional: the line-up works with plain names */ })
+      .then(() => wb.boot())
+      .catch(() => { /* forms are optional: everything else works without WhisperBox */ });
+    return () => { off(); offK(); offW(); };
   }, [reload, reloadKith]);
 
   // The address that authors on each calendar (its bound identity), for permission checks.
@@ -224,6 +258,69 @@ export default function App() {
   };
   const bookingColor = (st: BookingStatus) => (st === "confirmed" ? C.green : st === "cancelled" ? C.red : C.yellow);
   const statusWord = (st: BookingStatus) => st.charAt(0).toUpperCase() + st.slice(1);
+
+  // ── forms (ADR 0005) ──
+  const nightForms = useMemo(() => formsOf(selMaster), [selMaster]);
+  const wbSnap = useMemo(() => { try { return wb.client.snapshot(); } catch { return null; } }, [wbTick, selMaster]);
+  const formInfo = (f: NightForm) => {
+    let sum: any = null;
+    try { sum = wb.client.formSummary(f.formId); } catch { sum = null; }
+    const title = (sum && sum.ok && sum.title) || f.title || purposeLabel(f.purpose);
+    if (!sum || !sum.ok) return { title, line: `${purposeLabel(f.purpose)} · syncing…`, canRead: false };
+    const parts = [purposeLabel(f.purpose), sum.status === "closed" ? "Closed" : "Open"];
+    if (sum.canRead) { parts.push(`${sum.responses} ${sum.responses === 1 ? "response" : "responses"}`); if (sum.newResponses > 0) parts.push(`${sum.newResponses} new`); }
+    else parts.push("answers go to its creator");
+    return { title, line: parts.join(" · "), canRead: !!sum.canRead };
+  };
+  const [formOpen, setFormOpen] = useState(false);
+  const formBusy = useRef(false);
+  const addForm = async (purpose: string) => {
+    if (!selMaster || formBusy.current) return;
+    formBusy.current = true;
+    try {
+      await wb.boot();   // idempotent: the identity must be loaded before a form can be created
+      const when = selOcc ? new Date(selOcc.startTime).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+      const name = selMaster.title || "our night";
+      const def = wbTemplate(purpose, { title: `${purposeLabel(purpose)}: ${name}${when ? ` (${when})` : ""}` });
+      const res: any = wb.client.createForm(def);
+      if (!res || !res.ok || !res.formId) throw new Error(res?.error || "WhisperBox didn't create the form");
+      const su: any = wb.client.shareUri(res.formId);
+      const uri = su && su.ok ? su.uri : "";
+      await postExt(selMaster.calendarId, { ns: NS, kind: "form", target: selMaster.id, id: res.formId, data: { formId: res.formId, uri, purpose, title: def.title } });
+      setFormOpen(false); toast("Form created. Share its link."); await reload();
+    } catch (e) { Alert.alert("Couldn't add the form", msg(e)); }
+    finally { formBusy.current = false; }
+  };
+  const shareForm = (f: NightForm) => { if (f.uri) Share.share({ message: f.uri }).catch(() => {}); };
+  const detachForm = (f: NightForm) => {
+    if (!selMaster) return;
+    Alert.alert("Remove this form from the night?", "It stays in WhisperBox; people can still answer it.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: () => { deleteExt(selMaster.calendarId, f.id).then(reload).catch((e) => Alert.alert("Couldn't remove", msg(e))); } },
+    ]);
+  };
+  const [answersOf, setAnswersOf] = useState<NightForm | null>(null);
+  const answerRows = useMemo(() => {
+    if (!answersOf || !wbSnap) return [];
+    const st: any = wbSnap.state || {}, fm: any = (st.forms || {})[answersOf.formId] || {};
+    const qs: any[] = Array.isArray(fm.questions) ? fm.questions : [];
+    const list: any[] = (wbSnap.creatorView?.responses || {})[answersOf.formId] || [];
+    const show = (q: any, v: any): string => {
+      if (v === null || v === undefined || v === "") return "—";
+      const opts: any[] = Array.isArray(q?.options) ? q.options : [];
+      const one = (x: any) => (typeof x === "number" && opts[x] !== undefined ? String(opts[x]) : x && typeof x === "object" && typeof x.other === "string" ? x.other : String(x));
+      if (Array.isArray(v)) return v.map(one).join(", ");
+      if (typeof v === "boolean") return v ? "Yes" : "No";
+      return one(v);
+    };
+    return list.map((r, i) => ({
+      head: typeof r?.submittedAt === "number" ? new Date(r.submittedAt).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : `Answer ${i + 1}`,
+      lines: (Array.isArray(r?.answers) ? r.answers : []).map((a: any) => {
+        const q = qs.find((x) => x && x.id === a?.questionId);
+        return `${q ? str(q.text) : str(a?.questionId)}: ${show(q, a?.value)}`;
+      }),
+    }));
+  }, [answersOf, wbSnap]);
 
   // ── Kith books (Calendars screen) ──
   const [kithLink, setKithLink] = useState("");
@@ -443,6 +540,28 @@ export default function App() {
                     {selOcc && doubles.get(`${selOcc.id}@${selOcc.occ}`)?.map((d, i) => (
                       <Text key={i} style={s.warn}>⚠ {d.artist} is also booked at {d.other.title || "another night"}, {new Date(d.other.startTime).toLocaleDateString(undefined, { day: "numeric", month: "short" })} {fmtTime(d.other.startTime)}</Text>
                     ))}
+                    <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                      <Text style={[s.label, { flex: 1 }]}>Forms ({nightForms.length})</Text>
+                      <Pressable hitSlop={8} onPress={() => setFormOpen(true)} style={{ marginBottom: 6 }}><Text style={{ color: C.blue, fontSize: 13 }}>+ Form</Text></Pressable>
+                    </View>
+                    {nightForms.length === 0 && <Text style={s.sub}>No forms yet. Add one for artist bookings, crew, the guest list or feedback.</Text>}
+                    {nightForms.map((f) => {
+                      const info = formInfo(f);
+                      const canRemove = f.author === meFor[selMaster.calendarId] || isEditorOf(cals.find((c) => c.id === selMaster.calendarId));
+                      return (
+                        <View key={f.id} style={s.booking}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.body} numberOfLines={1}>{info.title}</Text>
+                            <Text style={s.sub} numberOfLines={1}>{info.line}</Text>
+                            <View style={{ flexDirection: "row", gap: 16, marginTop: 4 }}>
+                              {!!f.uri && <Pressable hitSlop={6} onPress={() => shareForm(f)}><Text style={{ color: C.blue, fontSize: 12 }}>Share link</Text></Pressable>}
+                              {info.canRead && <Pressable hitSlop={6} onPress={() => setAnswersOf(f)}><Text style={{ color: C.blue, fontSize: 12 }}>Answers</Text></Pressable>}
+                              {canRemove && <Pressable hitSlop={6} onPress={() => detachForm(f)}><Text style={{ color: C.red, fontSize: 12 }}>Remove</Text></Pressable>}
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
                     {!!selMaster.description && (<><Text style={s.label}>Notes</Text><Text style={s.body}>{selMaster.description}</Text></>)}
                     <Text style={[s.sub, { marginTop: 10 }]}>Attendance: {rsvpLine(selMaster)}</Text>
                     <Text style={s.label}>Comments ({comments.length})</Text>
@@ -521,6 +640,46 @@ export default function App() {
                 })()}
               </View>
             </KeyboardAvoidingView>
+          </Modal>
+
+          {/* ── add a form ── */}
+          <Modal visible={formOpen} transparent animationType="slide" onRequestClose={() => setFormOpen(false)}>
+            <View style={s.sheetWrap}>
+              <View style={s.sheet}>
+                <View style={{ flexDirection: "row" }}>
+                  <Text style={[s.sheetTitle, { flex: 1 }]}>Add a form</Text>
+                  <Pressable hitSlop={10} onPress={() => setFormOpen(false)}><Text style={s.close}>✕</Text></Pressable>
+                </View>
+                <Text style={[s.sub, { marginTop: 6 }]}>A WhisperBox form for this night. Share its link; people answer in the WhisperBox app, and only you can read the answers.</Text>
+                {PURPOSES.map((p) => (
+                  <Pressable key={p.id} onPress={() => addForm(p.id)} style={[s.booking, { paddingVertical: 14 }]}>
+                    <Text style={s.body}>{p.label}</Text>
+                  </Pressable>
+                ))}
+                <Text style={[s.sub, { marginTop: 12 }]}>Forms made here belong to Frequencies on this phone: they don't show in the WhisperBox app.</Text>
+              </View>
+            </View>
+          </Modal>
+
+          {/* ── form answers ── */}
+          <Modal visible={!!answersOf} transparent animationType="slide" onRequestClose={() => setAnswersOf(null)}>
+            <View style={s.sheetWrap}>
+              <View style={s.sheet}>
+                <View style={{ flexDirection: "row" }}>
+                  <Text style={[s.sheetTitle, { flex: 1 }]} numberOfLines={2}>{answersOf ? formInfo(answersOf).title : ""}</Text>
+                  <Pressable hitSlop={10} onPress={() => setAnswersOf(null)}><Text style={s.close}>✕</Text></Pressable>
+                </View>
+                <ScrollView style={{ marginTop: 8 }}>
+                  {answerRows.length === 0 && <Text style={s.sub}>No answers yet.</Text>}
+                  {answerRows.map((r, i) => (
+                    <View key={i} style={s.comment}>
+                      <Text style={s.sub}>{r.head}</Text>
+                      {r.lines.map((l: string, k: number) => <Text key={k} style={s.body}>{l}</Text>)}
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
           </Modal>
 
           {/* ── new night ── */}
