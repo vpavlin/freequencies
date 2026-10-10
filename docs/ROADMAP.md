@@ -20,10 +20,9 @@ move, custom fields with badges, RSVP, owner/editor/viewer and Closed/Open/Colla
 | Hardening: core reads other members' data with `json::value()` (throws on a wrong type) | 🧪 | 🧪 | fold: typed reads in both folds + malformed parity fixtures (`12a5276`); reminders `66a5011`; ~55 remaining calls in `scala_impl.cpp` to audit |
 | Public "community" tier | ⬜ | ⬜ | needs a key-publishing design first |
 
-**Test build (2026-10-10), published for testing:** desktop core `scala` 0.12.0 + view `scala_ui` 0.12.0
-(Linux x86_64, Linux ARM64, macOS; includes the intents work from `feat/intents`, and still the Lanes
-view, which the next build drops) on the LAN 0.3 repo,
-and Android 0.9.117 (vc138) on the Loam F-Droid test repo. Not yet on apps.vpavlin.xyz or merged to Scala `main`.
+**Test build (2026-10-10), published for testing:** desktop core `scala` 0.12.1 + view `scala_ui` 0.12.1
+(Linux x86_64, Linux ARM64, macOS; includes the intents work from `feat/intents`) on the LAN 0.3 repo,
+and Android 0.9.118 (vc139) on the Loam F-Droid test repo. Not yet on apps.vpavlin.xyz or merged to Scala `main`.
 
 ## 2. Link the modules we have
 
