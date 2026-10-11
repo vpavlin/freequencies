@@ -26,11 +26,13 @@ night.
    from any Kith book the organiser has (the artists' book or a separate "Crew" book) or are typed in.
 2. **Check-in is a separate item, so anyone on the door can do it:**
    ```jsonc
-   { "ns": "xyz.frequencies", "kind": "checkin", "target": "<event id>", "id": "checkin:<crew item id>",
+   { "ns": "xyz.frequencies", "kind": "checkin", "target": "<event id>", "id": "checkin:<crew item id>:<random>",
      "data": { "crew": "<crew item id>", "at": 1760212800000 } }
    ```
-   The id is derived from the slot, so a slot has at most one check-in (the first author owns it). Undo
-   is deleting it (its author or an owner/editor). A check-in whose slot no longer exists is ignored.
+   The id starts with the slot's id, so a check-in can't be filed under another slot. Each check-in gets a
+   fresh random suffix because Scala keeps a deleted id deleted: "undo, then check in again" needs a new
+   id. If two people check the same person in, the earliest `at` counts. Undo is deleting it (its author
+   or an owner/editor). A check-in whose slot no longer exists, or is an open slot, is ignored.
 3. **Same rules as bookings:** the member who added a slot edits it; that member or an owner/editor
    removes it. "Same person twice" warnings cover crew too: one person (same Kith contact or same name)
    on two overlapping or same-day nights, as artist or crew, is flagged on both.

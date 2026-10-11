@@ -493,7 +493,10 @@ Item {
 
     // ── crew (ADR 0007): crew slots (kind "crew") and check-ins (kind "checkin"); mirrors mobile/src/app/crew.ts ──
     readonly property var crewRoles: ["Door", "Bar", "Sound", "Lights", "Security", "Cloakroom", "Runner"]
-    function checkinId(slotId) { return "checkin:" + slotId }
+    // A fresh id per check-in: Scala keeps a deleted ext id deleted, so "undo, then check in again"
+    // needs a new one. The slot is in the id so a check-in can't be filed under someone else's slot.
+    function checkinPrefix(slotId) { return "checkin:" + slotId + ":" }
+    function checkinId(slotId) { return checkinPrefix(slotId) + Math.random().toString(36).slice(2, 10) }
     function crewOf(ev) {
         var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], ins = {}, out = []
         for (var i = 0; i < xs.length; i++) {
@@ -501,9 +504,10 @@ Item {
             if (!x || x.ns !== "xyz.frequencies" || x.kind !== "checkin" || !str(x.id)) continue
             var d = (x.data && typeof x.data === "object" && !Array.isArray(x.data)) ? x.data : {}
             var slot = str(d.crew)
-            // The id is derived from the slot, so a check-in can't be filed under someone else's slot.
-            if (!slot || str(x.id) !== checkinId(slot)) continue
-            ins[slot] = { id: str(x.id), author: str(x.author), at: (typeof d.at === "number" && isFinite(d.at)) ? d.at : 0 }
+            if (!slot || str(x.id).indexOf(checkinPrefix(slot)) !== 0) continue
+            var at = (typeof d.at === "number" && isFinite(d.at)) ? d.at : 0, prev = ins[slot]
+            // Two people checking the same person in at once: the earliest counts.
+            if (!prev || at < prev.at || (at === prev.at && str(x.id) < prev.id)) ins[slot] = { id: str(x.id), author: str(x.author), at: at }
         }
         for (var k = 0; k < xs.length; k++) {
             var y = xs[k]

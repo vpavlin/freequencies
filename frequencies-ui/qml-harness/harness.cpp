@@ -137,7 +137,7 @@ int main(int argc, char **argv) {
                            {"hlc",QJsonObject{{"wall",double(at(-1,12))},{"ctr",0},{"dev","d"}}},{"data",data}};
     };
     auto checkin = [&](const QString &slot, const QString &author, double when) {
-        return QJsonObject{{"ns","xyz.frequencies"},{"kind","checkin"},{"target","n1"},{"id","checkin:"+slot},{"author",author},
+        return QJsonObject{{"ns","xyz.frequencies"},{"kind","checkin"},{"target","n1"},{"id","checkin:"+slot+":h1"},{"author",author},
                            {"hlc",QJsonObject{{"wall",when},{"ctr",0},{"dev","d"}}},{"data",QJsonObject{{"crew",slot},{"at",when}}}};
     };
     n1ext.append(crewItem("cr1","n1","0xme",QJsonObject{{"name","Jana Door"},{"contact","k5"},{"book","b2"},{"role","Door"},{"call","21:30"},{"status","confirmed"}}));

@@ -3,7 +3,7 @@ import { crewOf, crewSummary, crewSummaryLabel, checkinId } from "../src/app/cre
 import { doubleBookings } from "../src/app/lineup.ts";
 
 const crew = (id: string, data: unknown, extra: object = {}) => ({ ns: "xyz.frequencies", kind: "crew", id, author: "a1", data, ...extra });
-const checkin = (slot: string, extra: object = {}) => ({ ns: "xyz.frequencies", kind: "checkin", id: checkinId(slot), author: "door", data: { crew: slot, at: 1000 }, ...extra });
+const checkin = (slot: string, extra: object = {}, at = 1000) => ({ ns: "xyz.frequencies", kind: "checkin", id: checkinId(slot), author: "door", data: { crew: slot, at }, ...extra });
 
 // crewOf: typed reads, malformed skipped, open slots, sorted by role → call → named first → name
 const ev = { ext: [
@@ -15,8 +15,9 @@ const ev = { ext: [
   crew("6", { name: "Eva", role: "Bar" }),
   crew("7", { name: "Ota", role: "Door", call: "20:00", status: "cancelled" }),
   checkin("1"),
+  checkin("1", { author: "late" }, 2000),                    // a second, later check-in: the earliest counts
   checkin("2"),                                               // open slot can't be checked in
-  { ns: "xyz.frequencies", kind: "checkin", id: "forged", data: { crew: "6", at: 5 } },   // id not derived from the slot
+  { ns: "xyz.frequencies", kind: "checkin", id: "checkin:1:x", data: { crew: "6", at: 5 } },   // id names another slot
   checkin("gone"),                                            // slot no longer exists
   { ns: "xyz.frequencies", kind: "artist", id: "a", data: { name: "DJ" } },
   null,
@@ -29,7 +30,9 @@ assert.equal(by["3"].status, "asked", "an unknown status reads as asked");
 assert.equal(by["1"].checkedIn?.author, "door");
 assert.equal(by["1"].checkedIn?.at, 1000);
 assert.equal(by["2"].checkedIn, null, "open slots have no check-in");
-assert.equal(by["6"].checkedIn, null, "a check-in whose id isn't derived from the slot is ignored");
+assert.equal(by["6"].checkedIn, null, "a check-in whose id names another slot is ignored");
+assert.notEqual(checkinId("1"), checkinId("1"), "a fresh id each time (deleted ext ids stay deleted)");
+assert.ok(checkinId("1").startsWith("checkin:1:"));
 assert.equal(by["2"].contact, "");
 assert.deepEqual(crewOf({}), []);
 assert.deepEqual(crewOf({ ext: {} }), []);

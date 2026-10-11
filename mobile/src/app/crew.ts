@@ -25,7 +25,10 @@ interface ExtItem { ns?: unknown; kind?: unknown; id?: unknown; author?: unknown
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 const obj = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
 
-export const checkinId = (slotId: string) => "checkin:" + slotId;
+// A fresh id per check-in: Scala keeps a deleted ext id deleted, so "undo, then check in again" needs
+// a new one. The slot is in the id so a check-in can't be filed under someone else's slot.
+export const checkinPrefix = (slotId: string) => "checkin:" + slotId + ":";
+export const checkinId = (slotId: string, nonce = Math.random().toString(36).slice(2, 10)) => checkinPrefix(slotId) + nonce;
 
 // Other members write these items, so every field is read by type and anything malformed is skipped.
 export function crewOf(ev: { ext?: unknown }): CrewSlot[] {
@@ -35,9 +38,11 @@ export function crewOf(ev: { ext?: unknown }): CrewSlot[] {
     if (!x || x.ns !== NS || x.kind !== KIND_CHECKIN || !str(x.id)) continue;
     const d = obj(x.data);
     const slot = str(d.crew);
-    // The id is derived from the slot, so a check-in can't be filed under someone else's slot.
-    if (!slot || str(x.id) !== checkinId(slot)) continue;
-    checkins.set(slot, { id: str(x.id), author: str(x.author), at: typeof d.at === "number" && isFinite(d.at) ? d.at : 0 });
+    if (!slot || !str(x.id).startsWith(checkinPrefix(slot))) continue;
+    const at = typeof d.at === "number" && isFinite(d.at) ? d.at : 0;
+    // Two people checking the same person in at once: the earliest counts.
+    const prev = checkins.get(slot);
+    if (!prev || at < prev.at || (at === prev.at && str(x.id) < prev.id)) checkins.set(slot, { id: str(x.id), author: str(x.author), at });
   }
   const out: CrewSlot[] = [];
   for (const x of xs) {
