@@ -1,4 +1,4 @@
-# Demo script: Frequencies in 6 minutes
+# Demo script: Frequencies in 7 minutes
 
 For showing Frequencies to an event organiser: a promoter, a venue, a collective. One laptop with
 Basecamp, one Android phone. Everything runs on the demo calendar "Basement Collective (demo)",
@@ -53,12 +53,17 @@ edited it, which is fine, it's a demo.
 - If you have a Kith "Artists" book joined, pick from it instead and say: "the address book is
   its own app; Frequencies just links to the person."
 
-**5. A guest list (phone or laptop, 1 min).** On **Halloween Bass** → *+ Form* → *Guest list*.
+**5. The crew (laptop, 30 s; Frequencies 0.4.0 or newer).** Back on **Low End Theory**, scroll to *Crew*.
+- Door, bar and sound, each with a call time; the green *Here ✓* shows who has arrived. "Whoever
+  is on the door checks people in from their phone."
+- Open **Dub Session**: an open bar slot. "The board shows which nights still need people."
+
+**6. A guest list (phone or laptop, 1 min).** On **Halloween Bass** → *+ Form* → *Guest list*.
 - *Share link* → send it to the second phone (or show the link). "Guests answer in WhisperBox.
   Only you can read the answers; even the rest of the crew only sees that there's a guest list."
 - If someone answers live: the count on the night goes up; *Answers* shows the names.
 
-**6. It's still a calendar (laptop, 30 s).** Open **Scala** (the calendar app).
+**7. It's still a calendar (laptop, 30 s).** Open **Scala** (the calendar app).
 - The same nights, the same comments. "Anyone in your team who only wants a calendar uses this;
   Frequencies is the promoter's view on top."
 
