@@ -1,6 +1,6 @@
 # 0007. The crew of a night: roles and call times on the night, people from Kith
 
-- Status: accepted
+- Status: accepted (built; scope vs ADR 0001 awaiting the owner's confirmation)
 - Date: 2026-10-11
 
 ## Context
@@ -37,6 +37,16 @@ night.
    removes it. "Same person twice" warnings cover crew too: one person (same Kith contact or same name)
    on two overlapping or same-day nights, as artist or crew, is flagged on both.
 4. The logic is in `mobile/src/app/crew.ts` (tested) and mirrored in the desktop view.
+
+## Relation to ADR 0001
+
+ADR 0001 (decision 2) plans crew as **its own module**, with its own log, permissions and Android
+app. This ADR covers only the part that belongs to a night: who works it, in which role, and who has
+arrived, which is the same kind of data as the line-up (ADR 0004). The people themselves already have
+a module (Kith). A separate crew module would still make sense for what spans nights (availability,
+a standing roster, hours worked); if one is built, the slots here link to it the way bookings link to
+Kith, and this ADR is revisited. Until then this is a deliberate, smaller step than ADR 0001 planned,
+**awaiting the owner's confirmation**.
 
 ## Rejected
 
