@@ -71,6 +71,8 @@ QString MockLogos::callModule(const QString &mod, const QString &method, const Q
     if (method == "createEvent") return "\"new-1\"";
     if (method == "updateCalendarMeta") return "true";
     if (method == "postExt") return R"({"ok":true,"id":"x-new"})";
+    if (method == "putEvent") return "\"" + args.toList().value(1).toString() + "\"";
+    if (method == "createInvite") return R"({"ok":true,"link":"scala://join?id=c5&key=k&inv=t","role":"viewer"})";
     return "";
 }
 void MockLogos::callModuleAsync(const QString &mod, const QString &method, const QVariant &args, const QJSValue &cb, int) {
@@ -112,7 +114,8 @@ int main(int argc, char **argv) {
         QJsonObject{{"id","c1"},{"name","Basement Collective"},{"schema",schema},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
         QJsonObject{{"id","c2"},{"name","Family"},{"schema",QJsonArray{}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
         QJsonObject{{"id","c3"},{"name","Venue Partners"},{"schema",QJsonArray{}},{"owner","0xother"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
-        QJsonObject{{"id","c4"},{"name","Studio projects"},{"schema",QJsonArray{QJsonObject{{"key","status"},{"label","Status"},{"type","text"}}}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}}};
+        QJsonObject{{"id","c4"},{"name","Studio projects"},{"schema",QJsonArray{QJsonObject{{"key","status"},{"label","Status"},{"type","text"}}}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",true}},
+        QJsonObject{{"id","c5"},{"name","Basement Collective (public)"},{"schema",QJsonArray{}},{"owner","0xme"},{"authorAddr","0xme"},{"roles",QJsonObject{}},{"open",false}}};
     QJsonArray comment{QJsonObject{{"ns","scala"},{"kind","comment"},{"target","n1"},{"id","x-1"},{"author","0xpromoter111111"},
                                    {"hlc",QJsonObject{{"wall",double(at(-1,14))},{"ctr",0},{"dev","0xpromoter"}}},{"data",QJsonObject{{"text","Rider confirmed, two CDJs + mixer"}}}}};
     auto artist = [&](const QString &id, const QString &target, const QString &author, const QJsonObject &data) {
@@ -140,6 +143,8 @@ int main(int argc, char **argv) {
         return QJsonObject{{"ns","xyz.frequencies"},{"kind","checkin"},{"target","n1"},{"id","checkin:"+slot+":h1"},{"author",author},
                            {"hlc",QJsonObject{{"wall",when},{"ctr",0},{"dev","d"}}},{"data",QJsonObject{{"crew",slot},{"at",when}}}};
     };
+    n1ext.append(QJsonObject{{"ns","xyz.frequencies"},{"kind","public"},{"target","n1"},{"id","public:n1:p1"},{"author","0xme"},
+                             {"hlc",QJsonObject{{"wall",double(at(-1,9))},{"ctr",0},{"dev","d"}}},{"data",QJsonObject{{"calendar","c5"}}}});
     n1ext.append(crewItem("cr1","n1","0xme",QJsonObject{{"name","Jana Door"},{"contact","k5"},{"book","b2"},{"role","Door"},{"call","21:30"},{"status","confirmed"}}));
     n1ext.append(crewItem("cr2","n1","0xme",QJsonObject{{"name","Petr"},{"role","Bar"},{"call","21:00"},{"status","asked"}}));
     n1ext.append(crewItem("cr3","n1","0xpromoter111111",QJsonObject{{"name",""},{"role","Bar"},{"call","22:00"}}));
@@ -194,7 +199,11 @@ int main(int argc, char **argv) {
     QTimer::singleShot(7800, [&] { grab(&view, out + "/13-crew.png"); runJs(&view, "openCrew(null)"); });
     QTimer::singleShot(8200, [&] { runJs(&view, "cRole.text = 'Bar'; cSearch.text = 'ja'"); });
     QTimer::singleShot(8500, [&] { grab(&view, out + "/14-add-crew.png"); runJs(&view, "crewPopup.close()"); });
-    QTimer::singleShot(8800, [&] { app.quit(); });
+    QTimer::singleShot(8800, [&] { runJs(&view, "panelFlick.contentY = 230"); });
+    QTimer::singleShot(9100, [&] { grab(&view, out + "/15-public.png"); runJs(&view, "selected = grid.days[0].cells[1][0]"); });
+    QTimer::singleShot(9400, [&] { runJs(&view, "panelFlick.contentY = 150; pubPopup.open()"); });
+    QTimer::singleShot(9700, [&] { grab(&view, out + "/16-make-public.png"); runJs(&view, "pubPopup.close()"); });
+    QTimer::singleShot(9900, [&] { app.quit(); });
     return app.exec();
 }
 #include "harness.moc"

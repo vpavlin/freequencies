@@ -9,3 +9,4 @@
 | [0005](0005-forms-from-whisperbox.md) | Booking, crew and guest-list forms come from WhisperBox, attached to the night | accepted |
 | [0006](0006-budget-from-kym.md) | A night's money is a KYM category in the crew's budget | proposed |
 | [0007](0007-crew-on-the-night.md) | The crew of a night: roles and call times on the night, people from Kith | accepted; scope vs 0001 to confirm |
+| [0008](0008-public-copy-of-a-night.md) | A public copy of a night, kept in step automatically | accepted (PoC) |

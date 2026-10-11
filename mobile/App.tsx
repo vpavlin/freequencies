@@ -19,7 +19,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { store, Calendar, CalEvent } from "./src/lib/store";
 import {
   onChange, startSyncing, setAppId, createEvent, updateEvent, createCalendar, updateCalendarMeta,
-  joinFromInvite, postExt, deleteExt,
+  joinFromInvite, postExt, deleteExt, createInviteTicket,
 } from "./src/lib/calendar";
 import { identityForCalendar } from "./src/lib/identities";
 import { expandEvents } from "./src/lib/recur";
@@ -31,6 +31,7 @@ import { setAppId as wbSetAppId, createWhisperbox } from "./src/whisperbox/rn";
 // @ts-ignore - plain ESM shared with WhisperBox's desktop core
 import { template as wbTemplate } from "./src/whisperbox/templates/templates.mjs";
 import { lineupOf, doubleBookings, feeLabel, totalFees, Booking, BookingStatus, STATUSES as BOOKING_STATUSES, NS, KIND_ARTIST } from "./src/app/lineup";
+import { publicLinkOf, publicItemId, mirrorPlan, copyToEvent, KIND_PUBLIC } from "./src/app/publish";
 import { crewOf, crewSummary, crewSummaryLabel, checkinId, CrewSlot, CrewStatus, CREW_STATUSES, ROLES, KIND_CREW, KIND_CHECKIN } from "./src/app/crew";
 
 // Scala's Catppuccin tokens, so the two apps look like one family.
@@ -264,6 +265,72 @@ export default function App() {
   };
   const bookingColor = (st: BookingStatus) => (st === "confirmed" ? C.green : st === "cancelled" ? C.red : C.yellow);
   const statusWord = (st: BookingStatus) => st.charAt(0).toUpperCase() + st.slice(1);
+
+  // ── public copy (ADR 0008) ──
+  // After every change, bring each published night's copy in its public calendar up to date. Only
+  // owners/editors of the public calendar write; for others the night says so.
+  const [mirrorBlocked, setMirrorBlocked] = useState<Set<string>>(new Set());
+  const mirroring = useRef(false);
+  const lastWritten = useRef(new Map<string, string>());   // never rewrite the same content twice in a session
+  useEffect(() => {
+    if (mirroring.current || !cals.length) return;
+    const freqIds = new Set(freqCals.map((c) => c.id));
+    const nights = events.filter((e) => freqIds.has(e.calendarId)) as any[];
+    const plan = mirrorPlan(nights, events, (id) => cals.some((c) => c.id === id && !isFreqCal(c)));
+    const blocked = new Set<string>();
+    const todo = plan.filter((w) => {
+      if (!isEditorOf(cals.find((c) => c.id === w.calendarId))) { blocked.add(w.nightId); return false; }
+      const sig = w.calendarId + "\n" + JSON.stringify(copyToEvent(w.copy));
+      return lastWritten.current.get(w.id + "@" + w.calendarId) !== sig;
+    });
+    setMirrorBlocked((prev) => (prev.size === blocked.size && [...blocked].every((x) => prev.has(x)) ? prev : blocked));
+    if (!todo.length) return;
+    mirroring.current = true;
+    (async () => {
+      for (const w of todo) {
+        try {
+          await createEvent(w.calendarId, copyToEvent(w.copy) as any, w.id);   // an upsert: same id = edit
+          lastWritten.current.set(w.id + "@" + w.calendarId, w.calendarId + "\n" + JSON.stringify(copyToEvent(w.copy)));
+        } catch { /* retried on the next change */ }
+      }
+    })().finally(() => { mirroring.current = false; reload(); });
+  }, [events, cals, freqCals, isEditorOf, reload]);
+
+  const publicLink = useMemo(() => (selMaster ? publicLinkOf(selMaster) : null), [selMaster]);
+  // Only Closed calendars (organisers edit, everyone else reads), so a night can't land in "Family".
+  const publicTargets = useMemo(() => otherCals.filter((c) => isEditorOf(c) && c.open === false), [otherCals, isEditorOf]);
+  const [pubOpen, setPubOpen] = useState(false);
+  const pubBusy = useRef(false);
+  const makePublic = async (calId: string) => {
+    if (!selMaster || pubBusy.current) return;
+    pubBusy.current = true;
+    try {
+      await postExt(selMaster.calendarId, { ns: NS, kind: KIND_PUBLIC, target: selMaster.id, id: publicItemId(selMaster.id), data: { calendar: calId } });
+      setPubOpen(false); toast("Public: attendees will see it"); await reload();
+    } catch (e) { Alert.alert("Couldn't make it public", msg(e)); }
+    finally { pubBusy.current = false; }
+  };
+  const newPublicCalendar = async () => {
+    if (!selMaster || pubBusy.current) return;
+    const crewCal = cals.find((c) => c.id === selMaster.calendarId);
+    pubBusy.current = true;
+    let cal: Calendar | null = null;
+    try { cal = await createCalendar(`${crewCal?.name || "Our nights"} (public)`, crewCal?.color || "#89b4fa", "What's on. Published from Frequencies.", undefined, { open: false }); }
+    catch (e) { Alert.alert("Couldn't create the calendar", msg(e)); }
+    finally { pubBusy.current = false; }
+    if (cal) await makePublic(cal.id);
+  };
+  const makePrivate = () => {
+    if (!selMaster || !publicLink) return;
+    Alert.alert("Stop publishing this night?", "Its public copy stays, marked “Cancelled”, so people who saw it know it's off.", [
+      { text: "Keep public", style: "cancel" },
+      { text: "Stop", style: "destructive", onPress: () => { deleteExt(selMaster.calendarId, publicLink.id).then(() => { toast("No longer public"); return reload(); }).catch((e) => Alert.alert("Couldn't change it", msg(e))); } },
+    ]);
+  };
+  const sharePublic = async (calId: string, role: "viewer" | "editor") => {
+    try { const { link } = await createInviteTicket(calId, role); await Share.share({ message: link }); }
+    catch (e) { Alert.alert("Couldn't make a link", msg(e)); }
+  };
 
   // ── crew (ADR 0007) ──
   const crew = useMemo(() => crewOf(selMaster || {}), [selMaster]);
@@ -597,6 +664,30 @@ export default function App() {
                     {selOcc && doubles.get(`${selOcc.id}@${selOcc.occ}`)?.map((d, i) => (
                       <Text key={i} style={s.warn}>⚠ {d.artist} is also booked at {d.other.title || "another night"}, {new Date(d.other.startTime).toLocaleDateString(undefined, { day: "numeric", month: "short" })} {fmtTime(d.other.startTime)}</Text>
                     ))}
+                    <Text style={s.label}>Public</Text>
+                    {publicLink ? (() => {
+                      const pc = cals.find((c) => c.id === publicLink.calendar);
+                      const canStop = publicLink.author === meFor[selMaster.calendarId] || isEditorOf(cals.find((c) => c.id === selMaster.calendarId));
+                      return (
+                        <View style={s.booking}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.body} numberOfLines={1}>{pc ? `Public in “${pc.name}”` : "Public in a calendar not on this phone"}</Text>
+                            <Text style={s.sub}>{mirrorBlocked.has(selMaster.id) ? `You can't update the public copy: ask an editor of “${pc?.name || "the public calendar"}” to open Frequencies.`
+                              : "Attendees see the time, venue, confirmed artists and the guest-list link. Nothing else."}</Text>
+                            <View style={{ flexDirection: "row", gap: 16, marginTop: 4 }}>
+                              {!!pc && isEditorOf(pc) && <Pressable hitSlop={6} onPress={() => sharePublic(pc.id, "viewer")}><Text style={{ color: C.blue, fontSize: 12 }}>Share with attendees</Text></Pressable>}
+                              {!!pc && isEditorOf(pc) && <Pressable hitSlop={6} onPress={() => sharePublic(pc.id, "editor")}><Text style={{ color: C.blue, fontSize: 12 }}>Invite an organiser</Text></Pressable>}
+                              {canStop && <Pressable hitSlop={6} onPress={makePrivate}><Text style={{ color: C.red, fontSize: 12 }}>Stop</Text></Pressable>}
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })() : (
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Text style={[s.sub, { flex: 1 }]}>Only this calendar's members see this night.</Text>
+                        <Pressable hitSlop={8} onPress={() => setPubOpen(true)}><Text style={{ color: C.blue, fontSize: 13 }}>Make public</Text></Pressable>
+                      </View>
+                    )}
                     <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
                       <Text style={[s.label, { flex: 1 }]}>Crew{crewSummaryLabel(crewSummary(crew)) ? ` (${crewSummaryLabel(crewSummary(crew))})` : ""}</Text>
                       <Pressable hitSlop={8} onPress={() => openCrew()} style={{ marginBottom: 6 }}><Text style={{ color: C.blue, fontSize: 13 }}>+ Crew</Text></Pressable>
@@ -722,6 +813,30 @@ export default function App() {
                 })()}
               </View>
             </KeyboardAvoidingView>
+          </Modal>
+
+          {/* ── make public ── */}
+          <Modal visible={pubOpen} transparent animationType="slide" onRequestClose={() => setPubOpen(false)}>
+            <View style={s.sheetWrap}>
+              <View style={s.sheet}>
+                <View style={{ flexDirection: "row" }}>
+                  <Text style={[s.sheetTitle, { flex: 1 }]}>Make this night public</Text>
+                  <Pressable hitSlop={10} onPress={() => setPubOpen(false)}><Text style={s.close}>✕</Text></Pressable>
+                </View>
+                <Text style={[s.sub, { marginTop: 6 }]}>Frequencies keeps a copy of this night in a public calendar and updates it whenever the night changes. The copy has the time, venue, confirmed artists and the guest-list link; never fees, crew, holds, notes or comments.</Text>
+                <Text style={s.label}>Publish to</Text>
+                {publicTargets.map((c) => (
+                  <Pressable key={c.id} onPress={() => makePublic(c.id)} style={[s.booking, { paddingVertical: 14 }]}>
+                    <View style={[s.dot, { backgroundColor: c.color || C.blue }]} />
+                    <Text style={s.body}>{c.name}</Text>
+                  </Pressable>
+                ))}
+                <Pressable onPress={newPublicCalendar} style={[s.booking, { paddingVertical: 14 }]}>
+                  <Text style={[s.body, { color: C.blue }]}>+ New public calendar</Text>
+                </Pressable>
+                <Text style={[s.sub, { marginTop: 12 }]}>Only Closed calendars you own or edit are listed: anyone can read a public calendar, only organisers change it. Share it with attendees from the night once it's public.</Text>
+              </View>
+            </View>
           </Modal>
 
           {/* ── crew slot ── */}

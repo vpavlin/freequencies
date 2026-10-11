@@ -491,6 +491,160 @@ Item {
         })
     }
 
+    // ── public copy (ADR 0008); mirrors mobile/src/app/publish.ts ─────────────────
+    function publicEventId(nightId) { return "pub-" + nightId }
+    function publicPrefix(nightId) { return "public:" + nightId + ":" }
+    function publicItemId(nightId) { return publicPrefix(nightId) + Math.random().toString(36).slice(2, 10) }
+    function publicLinkOf(ev) {
+        var nightId = str(ev && ev.id), xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], best = null
+        for (var i = 0; i < xs.length; i++) {
+            var x = xs[i]
+            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "public" || !nightId || str(x.id).indexOf(publicPrefix(nightId)) !== 0) continue
+            var d = (x.data && typeof x.data === "object" && !Array.isArray(x.data)) ? x.data : {}
+            var cal = str(d.calendar)
+            if (!cal) continue
+            var h = (x.hlc && typeof x.hlc === "object") ? x.hlc : {}
+            var wall = typeof h.wall === "number" ? h.wall : 0, ctr = typeof h.ctr === "number" ? h.ctr : 0
+            if (!best || wall < best.wall || (wall === best.wall && (ctr < best.ctr || (ctr === best.ctr && str(x.id) < best.id))))
+                best = { id: str(x.id), author: str(x.author), calendar: cal, wall: wall, ctr: ctr }
+        }
+        return best ? { id: best.id, author: best.author, calendar: best.calendar } : null
+    }
+    // Club nights run past midnight: a set starting before noon comes after the evening's sets.
+    function setKey(set) {
+        var m = /(\d{1,2})[:.](\d{2})/.exec(set || "")
+        if (!m) return 1e6
+        var h = Number(m[1]), mi = Number(m[2])
+        return (h < 12 ? h + 24 : h) * 60 + mi
+    }
+    // Only what attendees may see: never the night's description, fees, crew, holds, comments.
+    function publicCopyOf(n, published) {
+        var f = (n.fields && typeof n.fields === "object") ? n.fields : {}
+        var cancelled = !published || str(f.status) === "Cancelled", lines = []
+        if (cancelled) lines.push("This night is off.")
+        else {
+            var acts = lineupOf(n).filter(function (b) { return b.status === "confirmed" })
+            acts.sort(function (a, b) { return setKey(a.set) - setKey(b.set) })
+            if (acts.length) { lines.push("Line-up:"); for (var i = 0; i < acts.length; i++) lines.push(acts[i].set ? acts[i].set + "  " + acts[i].name : acts[i].name) }
+            var xs = Array.isArray(n.ext) ? n.ext : []
+            for (var k = 0; k < xs.length; k++) {
+                var x = xs[k], d = (x && x.data && typeof x.data === "object") ? x.data : {}
+                if (x && x.ns === "xyz.frequencies" && x.kind === "form" && str(d.purpose) === "guestlist" && str(d.uri)) {
+                    if (lines.length) lines.push(""); lines.push("Guest list: " + str(d.uri)); break
+                }
+            }
+        }
+        return { title: (cancelled ? "Cancelled: " : "") + (str(n.title).trim() || "Untitled night"),
+                 startTime: n.startTime, endTime: n.endTime, allDay: n.allDay === true,
+                 location: str(f.venue).trim(), description: lines.join("\n"), recur: (n.recur === undefined ? null : n.recur) }
+    }
+    function canon(v) {
+        return JSON.stringify(v, function (k, x) {
+            if (!x || typeof x !== "object" || Array.isArray(x)) return x
+            var o = {}, ks = Object.keys(x).sort(); for (var i = 0; i < ks.length; i++) o[ks[i]] = x[ks[i]]; return o
+        })
+    }
+    function sameCopy(cur, want) {
+        if (!cur) return false
+        return str(cur.title) === want.title && cur.startTime === want.startTime && cur.endTime === want.endTime
+            && (cur.allDay === true) === want.allDay && str(cur.location) === want.location
+            && str(cur.description) === want.description && canon(cur.recur === undefined ? null : cur.recur) === canon(want.recur)
+    }
+    function copyToEvent(c) {
+        var e = { title: c.title, startTime: c.startTime, endTime: c.endTime }
+        if (c.allDay) e.allDay = true
+        if (c.location) e.location = c.location
+        if (c.description) e.description = c.description
+        if (c.recur !== null && c.recur !== undefined) e.recur = c.recur
+        return e
+    }
+    function isPublicTarget(calId) { var c = calById(calId); return !!c && !isFreqCal(c) }
+    function mirrorPlan() {
+        var freq = {}; for (var i = 0; i < calendars.length; i++) if (isFreqCal(calendars[i])) freq[calendars[i].id] = true
+        var out = []
+        for (var k = 0; k < events.length; k++) {
+            var n = events[k]
+            if (!freq[n.calendarId]) continue
+            var pid = publicEventId(n.id), link = publicLinkOf(n), copies = [], targets = {}
+            for (var e = 0; e < events.length; e++) if (events[e].id === pid && isPublicTarget(events[e].calendarId)) { copies.push(events[e]); targets[events[e].calendarId] = true }
+            if (link && isPublicTarget(link.calendar)) targets[link.calendar] = true
+            for (var cal in targets) {
+                var want = publicCopyOf(n, !!link && link.calendar === cal), cur = null
+                for (var c = 0; c < copies.length; c++) if (copies[c].calendarId === cal) cur = copies[c]
+                if (!sameCopy(cur, want)) out.push({ calendarId: cal, id: pid, copy: want, nightId: n.id })
+            }
+        }
+        return out
+    }
+    // After every refresh, bring each published night's public copy up to date. Only owners/editors of
+    // the public calendar write; for others the night says so.
+    property var mirrorBlocked: ({})
+    property var lastWritten: ({})
+    property bool mirroring: false
+    property bool putMissing: false          // scala core older than 0.12.4: no putEvent, so no copying
+    onEventsChanged: Qt.callLater(root.runMirror)
+    function runMirror() {
+        if (mirroring || putMissing) return
+        var plan = mirrorPlan(), blocked = {}, todo = []
+        for (var i = 0; i < plan.length; i++) {
+            var w = plan[i]
+            if (!isEditorOf(calById(w.calendarId))) { blocked[w.nightId] = true; continue }
+            var sig = JSON.stringify(copyToEvent(w.copy))
+            if (lastWritten[w.id + "@" + w.calendarId] !== sig) todo.push({ w: w, sig: sig })
+        }
+        mirrorBlocked = blocked
+        if (!todo.length) return
+        mirroring = true
+        var left = todo.length
+        for (var t = 0; t < todo.length; t++) (function (job) {
+            core("putEvent", [job.w.calendarId, job.w.id, JSON.stringify(copyToEvent(job.w.copy))], function (r) {
+                if (r === "" || r === undefined || r === null) putMissing = true
+                if (r === job.w.id || str(j(r, "")) === job.w.id) { var m = {}; for (var k in lastWritten) m[k] = lastWritten[k]; m[job.w.id + "@" + job.w.calendarId] = job.sig; lastWritten = m }
+                if (--left === 0) { mirroring = false; refresh() }
+            })
+        })(todo[t])
+    }
+    readonly property var publicTargets: { var o = []; for (var i = 0; i < calendars.length; i++) if (!isFreqCal(calendars[i]) && isEditorOf(calendars[i]) && calendars[i].open === false) o.push(calendars[i]); return o }
+    property bool pubBusy: false
+    function makePublic(calId) {
+        if (!selMaster || pubBusy) return
+        pubBusy = true
+        var item = { ns: "xyz.frequencies", kind: "public", target: selMaster.id, id: publicItemId(selMaster.id), data: { calendar: calId } }
+        core("postExt", [selMaster.calendarId, JSON.stringify(item)], function (r) {
+            pubBusy = false
+            var res = j(r, {})
+            if (res && res.ok) { pubPopup.close(); notify("Public: attendees will see it"); refresh() }
+            else notify("Couldn't make it public" + (res && res.error ? ": " + res.error : "."), true)
+        })
+    }
+    function newPublicCalendar() {
+        if (!selMaster || pubBusy || !selCal) return
+        pubBusy = true
+        core("createCalendar", [(selCal.name || "Our nights") + " (public)", selCal.color || "#89b4fa", ""], function (r) {
+            var id = str(j(r, ""))
+            if (!id) { pubBusy = false; notify("Couldn't create the calendar.", true); return }
+            core("updateCalendarMeta", [id, JSON.stringify({ open: false, description: "What's on. Published from Frequencies." })], function () {
+                pubBusy = false; makePublic(id)
+            })
+        })
+    }
+    function stopPublic() {
+        var link = publicLinkOf(selMaster)
+        if (!selMaster || !link || pubBusy) return
+        pubBusy = true
+        core("deleteExt", [selMaster.calendarId, link.id], function (r) {
+            pubBusy = false
+            var res = j(r, {})
+            if (res && res.ok) { notify("No longer public: its copy now says Cancelled"); refresh() } else notify("Couldn't change it.", true)
+        })
+    }
+    function copyInvite(calId, role) {
+        core("createInvite", [calId, role], function (r) {
+            var res = j(r, {})
+            if (res && res.ok && str(res.link)) copyText(res.link); else notify("Couldn't make a link" + (res && res.error ? ": " + res.error : "."), true)
+        })
+    }
+
     // ── crew (ADR 0007): crew slots (kind "crew") and check-ins (kind "checkin"); mirrors mobile/src/app/crew.ts ──
     readonly property var crewRoles: ["Door", "Bar", "Sound", "Lights", "Security", "Cloakroom", "Runner"]
     // A fresh id per check-in: Scala keeps a deleted ext id deleted, so "undo, then check in again"
@@ -1065,6 +1219,36 @@ Item {
                         model: root.selected ? (root.doubles[root.occKey(root.selected)] || []) : []
                         delegate: LogosText { required property var modelData; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cYellow; font.pixelSize: 12; text: root.doubleLine(modelData) }
                     }
+                    // Public: a copy in a public calendar, kept in step (ADR 0008).
+                    LogosText { textFormat: Text.PlainText; Layout.topMargin: 6; text: "Public"; color: root.cFaint; font.pixelSize: 11 }
+                    Rectangle {
+                        id: pubBox
+                        readonly property var link: root.publicLinkOf(root.selMaster)
+                        readonly property var pcal: link ? root.calById(link.calendar) : null
+                        Layout.fillWidth: true; Layout.preferredHeight: pubCol.implicitHeight + 14; radius: 6; color: root.cSurface
+                        ColumnLayout {
+                            id: pubCol
+                            x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; spacing: 3
+                            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cText; font.pixelSize: 13
+                                text: !pubBox.link ? "Only this calendar's members see this night." : pubBox.pcal ? "Public in “" + pubBox.pcal.name + "”" : "Public in a calendar not on this computer" }
+                            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 11
+                                visible: !!pubBox.link
+                                text: root.putMissing ? "The public copy can't be updated from here: update the ‘scala’ package to 0.12.4 or newer."
+                                    : root.mirrorBlocked[root.selMaster ? root.selMaster.id : ""] ? "You can't update the public copy: ask an editor of the public calendar to open Frequencies."
+                                    : "Attendees see the time, venue, confirmed artists and the guest-list link. Nothing else." }
+                            Flow {
+                                Layout.fillWidth: true; spacing: 14
+                                LogosText { visible: !pubBox.link; text: "Make public"; color: root.cBlue; font.pixelSize: 12
+                                    MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: pubPopup.open() } }
+                                LogosText { visible: !!pubBox.pcal && root.isEditorOf(pubBox.pcal); text: "Copy link for attendees"; color: root.cBlue; font.pixelSize: 12
+                                    MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.copyInvite(pubBox.pcal.id, "viewer") } }
+                                LogosText { visible: !!pubBox.pcal && root.isEditorOf(pubBox.pcal); text: "Invite an organiser"; color: root.cBlue; font.pixelSize: 12
+                                    MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.copyInvite(pubBox.pcal.id, "editor") } }
+                                LogosText { visible: !!pubBox.link && (!!root.selCal && pubBox.link.author === root.selCal.authorAddr || root.isEditorOf(root.selCal)); text: "Stop"; color: root.cRed; font.pixelSize: 12
+                                    MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.stopPublic() } }
+                            }
+                        }
+                    }
                     // Crew: roles, call times and check-in (ADR 0007).
                     RowLayout {
                         Layout.fillWidth: true; Layout.topMargin: 6
@@ -1319,6 +1503,39 @@ Item {
                 Btn { text: root.aMine ? "Cancel" : "Close"; onClicked: artistPopup.close() }
                 Btn { visible: root.aMine; text: root.artistBusy ? "Saving…" : (root.aId ? "Save" : "Add"); primary: true; enabled_: !root.artistBusy; onClicked: root.saveArtist() }
             }
+        }
+    }
+
+    // ── make public ──────────────────────────────────────────────────────────────
+    Popup {
+        id: pubPopup
+        anchors.centerIn: Overlay.overlay
+        width: 440; modal: true; padding: 20
+        background: Rectangle { radius: 12; color: root.cSurface; border.width: 1; border.color: root.cSurface2 }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 8
+            LogosText { textFormat: Text.PlainText; text: "Make this night public"; color: root.cText; font.pixelSize: 18; font.weight: Theme.typography.weightMedium }
+            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
+                text: "Frequencies keeps a copy of this night in a public calendar and updates it whenever the night changes. The copy has the time, venue, confirmed artists and the guest-list link; never fees, crew, holds, notes or comments." }
+            LogosText { textFormat: Text.PlainText; text: "Publish to"; color: root.cFaint; font.pixelSize: 11 }
+            Repeater {
+                model: root.publicTargets
+                delegate: Rectangle {
+                    required property var modelData
+                    Layout.fillWidth: true; Layout.preferredHeight: 36; radius: 6; color: root.cBase
+                    Rectangle { x: 10; anchors.verticalCenter: parent.verticalCenter; width: 8; height: 8; radius: 4; color: modelData.color || root.cBlue }
+                    LogosText { x: 26; anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: modelData.name; color: root.cText; font.pixelSize: 13 }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.makePublic(modelData.id) }
+                }
+            }
+            Rectangle {
+                Layout.fillWidth: true; Layout.preferredHeight: 36; radius: 6; color: root.cBase
+                LogosText { x: 10; anchors.verticalCenter: parent.verticalCenter; textFormat: Text.PlainText; text: root.pubBusy ? "Creating…" : "+ New public calendar"; color: root.cBlue; font.pixelSize: 13 }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.newPublicCalendar() }
+            }
+            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cFaint; font.pixelSize: 11
+                text: "Only Closed calendars you own or edit are listed: anyone can read a public calendar, only organisers change it. Copy its link for attendees from the night once it's public." }
+            RowLayout { Layout.fillWidth: true; Item { Layout.fillWidth: true } Btn { text: "Cancel"; onClicked: pubPopup.close() } }
         }
     }
 

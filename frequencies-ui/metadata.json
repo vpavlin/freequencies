@@ -2,7 +2,7 @@
   "name": "frequencies_ui",
   "display_name": "Frequencies",
   "icon": "icon.png",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "ui_qml",
   "category": "general",
   "description": "Frequencies: organise club nights on top of the Scala calendar: venues, status, line-up and fees with artists from Kith, booking/crew/guest-list forms from WhisperBox, comments",

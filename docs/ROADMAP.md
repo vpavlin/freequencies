@@ -55,3 +55,4 @@ and Android 0.3.0 (vc3) on [frequencies.vpavlin.xyz](https://frequencies.vpavlin
 | "Same artist booked twice" warnings | ✅ | same Kith contact (or name) on overlapping or same-day nights; `mobile/src/app/lineup.ts` |
 | Analytics (events per month, attendance, revenue) | ⬜ | |
 | Integrations: tickets, weather, venue maps | ⬜ | |
+| Public copy of a night for attendees, kept in step automatically ([ADR 0008](adr/0008-public-copy-of-a-night.md)) | 🧪 | desktop `frequencies_ui` 0.5.0 (needs `scala` 0.12.4) + Android 0.5.0 in testing |
