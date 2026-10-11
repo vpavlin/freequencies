@@ -3,7 +3,7 @@
     "name": "Frequencies",
     "slug": "frequencies",
     "scheme": "frequencies",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "platforms": [
       "android"
     ],
@@ -11,7 +11,7 @@
     "userInterfaceStyle": "dark",
     "android": {
       "package": "xyz.vpavlin.frequencies",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1e1e2e"

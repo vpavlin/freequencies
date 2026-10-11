@@ -372,7 +372,8 @@ Item {
         var occs = expandEvents(src, d0 - 864e5, d0 + (nDays + 1) * 864e5)
         var byArtist = {}, order = []
         for (var a = 0; a < occs.length; a++) {
-            var seen = {}, lu = lineupOf(occs[a])
+            // Artists and named crew (ADR 0007): one person can't be in two places either way.
+            var seen = {}, lu = lineupOf(occs[a]).concat(crewOf(occs[a]).filter(function (c) { return !!c.name }))
             for (var b = 0; b < lu.length; b++) {
                 if (lu[b].status === "cancelled") continue
                 var key = artistKey(lu[b])
@@ -488,6 +489,130 @@ Item {
             if (res && res.ok) { if (aId === delId) artistPopup.close(); notify("Removed from the line-up"); refresh() }
             else notify("Couldn't remove the booking.", true)
         })
+    }
+
+    // ── crew (ADR 0007): crew slots (kind "crew") and check-ins (kind "checkin"); mirrors mobile/src/app/crew.ts ──
+    readonly property var crewRoles: ["Door", "Bar", "Sound", "Lights", "Security", "Cloakroom", "Runner"]
+    function checkinId(slotId) { return "checkin:" + slotId }
+    function crewOf(ev) {
+        var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], ins = {}, out = []
+        for (var i = 0; i < xs.length; i++) {
+            var x = xs[i]
+            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "checkin" || !str(x.id)) continue
+            var d = (x.data && typeof x.data === "object" && !Array.isArray(x.data)) ? x.data : {}
+            var slot = str(d.crew)
+            // The id is derived from the slot, so a check-in can't be filed under someone else's slot.
+            if (!slot || str(x.id) !== checkinId(slot)) continue
+            ins[slot] = { id: str(x.id), author: str(x.author), at: (typeof d.at === "number" && isFinite(d.at)) ? d.at : 0 }
+        }
+        for (var k = 0; k < xs.length; k++) {
+            var y = xs[k]
+            if (!y || y.ns !== "xyz.frequencies" || y.kind !== "crew" || !str(y.id)) continue
+            var e = (y.data && typeof y.data === "object" && !Array.isArray(y.data)) ? y.data : {}
+            var name = str(e.name).trim(), role = str(e.role).trim()
+            if (!name && !role) continue
+            var st = str(e.status), id = str(y.id)
+            out.push({ id: id, author: str(y.author), name: name, contact: name ? str(e.contact) : "", book: name ? str(e.book) : "",
+                       role: role, call: str(e.call).trim(), status: bookingStatuses.indexOf(st) >= 0 ? st : "asked",
+                       checkedIn: name ? (ins[id] || null) : null })
+        }
+        out.sort(function (a, b) {
+            return (a.role || "\uffff").localeCompare(b.role || "\uffff") || (a.call || "\uffff").localeCompare(b.call || "\uffff")
+                || (a.name ? 0 : 1) - (b.name ? 0 : 1) || a.name.localeCompare(b.name)
+        })
+        return out
+    }
+    function crewSummary(slots) {
+        var r = { people: 0, open: 0, confirmed: 0, here: 0 }
+        for (var i = 0; i < slots.length; i++) {
+            var c = slots[i]
+            if (c.status === "cancelled") continue
+            if (!c.name) { r.open++; continue }
+            r.people++
+            if (c.status === "confirmed") r.confirmed++
+            if (c.checkedIn) r.here++
+        }
+        return r
+    }
+    function crewSummaryLabel(sm) {
+        var parts = []
+        if (sm.people) parts.push(sm.people + " on")
+        if (sm.open) parts.push(sm.open + " open")
+        if (sm.here) parts.push(sm.here + " here")
+        return parts.join(" · ")
+    }
+    function crewShort(ev) {
+        var sm = crewSummary(crewOf(ev))
+        if (!sm.people && !sm.open) return ""
+        return "Crew " + sm.people + (sm.open ? " · " + sm.open + " open" : "")
+    }
+
+    // crew popup state
+    property string cId: ""
+    property string cContact: ""
+    property string cBook: ""
+    property string cStatus: "asked"
+    property bool cMine: true
+    property bool cCanRemove: false
+    property string cQuery: ""
+    readonly property var cMatches: {
+        var q = cQuery.trim().toLowerCase(), out = []
+        for (var i = 0; i < kithArtists.length && out.length < 12; i++) if (!q || kithArtists[i].name.toLowerCase().indexOf(q) >= 0) out.push(kithArtists[i])
+        return out
+    }
+    function openCrew(c) {
+        if (!selMaster) return
+        cId = c ? c.id : ""; cContact = c ? c.contact : ""; cBook = c ? c.book : ""; cStatus = c ? c.status : "asked"
+        cMine = !c || (!!selCal && c.author === selCal.authorAddr)
+        cCanRemove = !!c && (cMine || isEditorOf(selCal))
+        cQuery = ""; cSearch.text = ""
+        cName.text = c ? c.name : ""; cRole.text = c ? c.role : ""; cCall.text = c ? c.call : ""
+        crewPopup.open()
+        loadKith()
+    }
+    property bool crewBusy: false
+    function saveCrew() {
+        if (!selMaster || crewBusy) return
+        var name = cName.text.trim(), role = cRole.text.trim()
+        if (!name && !role) { notify("Give a role or a name. A role without a name is an open slot.", true); return }
+        var data = { name: name, role: role, status: cStatus }
+        if (name && cContact) { data.contact = cContact; data.book = cBook }
+        if (cCall.text.trim()) data.call = cCall.text.trim()
+        var item = { ns: "xyz.frequencies", kind: "crew", target: selMaster.id, data: data }
+        var editId = cId
+        if (editId) item.id = editId
+        crewBusy = true
+        core("postExt", [selMaster.calendarId, JSON.stringify(item)], function (r) {
+            crewBusy = false
+            var res = j(r, {})
+            if (res && res.ok) { if (cId === editId) crewPopup.close(); notify(editId ? "Crew updated" : name ? "Added " + name + " to the crew" : "Open slot added"); refresh() }
+            else notify("Couldn't save" + (res && res.error ? ": " + res.error : "."), true)
+        })
+    }
+    function removeCrew() {
+        if (!selMaster || !cId || crewBusy) return
+        var delId = cId
+        crewBusy = true
+        core("deleteExt", [selMaster.calendarId, delId], function (r) {
+            crewBusy = false
+            var res = j(r, {})
+            if (res && res.ok) { if (cId === delId) crewPopup.close(); notify("Removed from the crew"); refresh() }
+            else notify("Couldn't remove it.", true)
+        })
+    }
+    // Anyone on the door can check someone in; undoing is for whoever did it, or an editor.
+    function canUndoCheckin(c) { return !!c.checkedIn && ((!!selCal && c.checkedIn.author === selCal.authorAddr) || isEditorOf(selCal)) }
+    function toggleCheckin(c) {
+        if (!selMaster || crewBusy || !c.name) return
+        crewBusy = true
+        var done = function (r, what) {
+            crewBusy = false
+            var res = j(r, {})
+            if (res && res.ok) { notify(what); refresh() } else notify("Couldn't check in" + (res && res.error ? ": " + res.error : "."), true)
+        }
+        if (c.checkedIn) core("deleteExt", [selMaster.calendarId, c.checkedIn.id], function (r) { done(r, "Check-in undone") })
+        else core("postExt", [selMaster.calendarId, JSON.stringify({ ns: "xyz.frequencies", kind: "checkin", target: selMaster.id, id: checkinId(c.id),
+                                                                     data: { crew: c.id, at: Date.now() } })], function (r) { done(r, c.name + " is here") })
     }
 
     // ── forms (ADR 0005): WhisperBox forms attached to a night as ext items (kind "form") ──────
@@ -804,8 +929,9 @@ Item {
                                                     id: night
                                                     required property var modelData
                                                     readonly property string status: root.fieldOf(modelData, "status")
+                                                    readonly property string crew: root.crewShort(root.eventById(modelData.seriesId || modelData.id))   // modelData is a converted copy; its ext isn't a JS array
                                                     readonly property bool isSel: !!root.selected && root.selected.id === modelData.id && root.selected.occ === modelData.occ
-                                                    width: cellCol.width; height: 46; radius: 6
+                                                    width: cellCol.width; height: crew ? 60 : 46; radius: 6
                                                     color: isSel ? root.cSurface2 : root.cSurface
                                                     border.width: isSel ? 1 : 0; border.color: root.cMauve
                                                     Rectangle { width: 4; height: parent.height; radius: 2; color: root.statusColor(night.status) }
@@ -819,6 +945,8 @@ Item {
                                                             text: (root.doubles[root.occKey(night.modelData)] ? "⚠ " : "") + (night.modelData.allDay ? "All day" : Qt.formatTime(new Date(night.modelData.startTime), "hh:mm"))
                                                                 + (root.laneBy !== "venue" && root.fieldOf(night.modelData, "venue") ? " · " + root.fieldOf(night.modelData, "venue") : "")
                                                                 + (night.status && root.laneBy !== "status" ? " · " + night.status : "") }
+                                                        LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; font.pixelSize: 11; color: root.cSub
+                                                            visible: night.crew !== ""; text: night.crew }
                                                     }
                                                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.selected = night.modelData }
                                                 }
@@ -932,6 +1060,48 @@ Item {
                     Repeater {
                         model: root.selected ? (root.doubles[root.occKey(root.selected)] || []) : []
                         delegate: LogosText { required property var modelData; textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cYellow; font.pixelSize: 12; text: root.doubleLine(modelData) }
+                    }
+                    // Crew: roles, call times and check-in (ADR 0007).
+                    RowLayout {
+                        Layout.fillWidth: true; Layout.topMargin: 6
+                        LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; color: root.cFaint; font.pixelSize: 11
+                            text: "Crew" + (root.crewSummaryLabel(root.crewSummary(root.crewOf(root.selMaster))) ? " (" + root.crewSummaryLabel(root.crewSummary(root.crewOf(root.selMaster))) + ")" : "") }
+                        LogosText { textFormat: Text.PlainText; text: "+ Crew"; color: root.cBlue; font.pixelSize: 12
+                            MouseArea { anchors.fill: parent; anchors.margins: -4; cursorShape: Qt.PointingHandCursor; onClicked: root.openCrew(null) } }
+                    }
+                    LogosText { textFormat: Text.PlainText; visible: root.crewOf(root.selMaster).length === 0; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
+                        text: "No crew yet. Add people, or a role with no name as an open slot." }
+                    Repeater {
+                        model: root.crewOf(root.selMaster)
+                        delegate: Rectangle {
+                            id: cr
+                            required property var modelData
+                            readonly property bool canToggle: !!modelData.name && modelData.status !== "cancelled" && (!modelData.checkedIn || root.canUndoCheckin(modelData))
+                            Layout.fillWidth: true; Layout.preferredHeight: crCol.implicitHeight + 12; radius: 6; color: root.cSurface
+                            Rectangle { x: 8; anchors.verticalCenter: parent.verticalCenter; width: 8; height: 8; radius: 4; color: cr.modelData.name ? root.bookingColor(cr.modelData.status) : root.cFaint }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openCrew(cr.modelData) }
+                            Column {
+                                id: crCol
+                                x: 24; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 32 - (here.visible ? here.width + 8 : 0); spacing: 1
+                                LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; font.pixelSize: 13
+                                    color: cr.modelData.status === "cancelled" || !cr.modelData.name ? root.cSub : root.cText
+                                    font.strikeout: cr.modelData.status === "cancelled"; font.italic: !cr.modelData.name
+                                    text: (cr.modelData.role ? cr.modelData.role + ": " : "") + (cr.modelData.name ? root.kithName(cr.modelData) : "open") }
+                                LogosText { textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight; color: root.cSub; font.pixelSize: 11
+                                    visible: text !== ""
+                                    text: [cr.modelData.call ? "from " + cr.modelData.call : "", cr.modelData.name ? root.cap(cr.modelData.status) : "",
+                                           cr.modelData.checkedIn ? "here " + Qt.formatTime(new Date(cr.modelData.checkedIn.at), "hh:mm") : ""].filter(function (x) { return !!x }).join(" · ") }
+                            }
+                            Chip {
+                                id: here
+                                visible: !!cr.modelData.name && cr.modelData.status !== "cancelled" || !!cr.modelData.checkedIn
+                                anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                                text: cr.modelData.checkedIn ? "Here ✓" : "Check in"
+                                on: !!cr.modelData.checkedIn; accent: root.cGreen
+                                opacity: cr.canToggle && !root.crewBusy ? 1 : 0.6
+                                onClicked: if (cr.canToggle) root.toggleCheckin(cr.modelData)
+                            }
+                        }
                     }
                     // Forms: WhisperBox forms attached to this night (ADR 0005).
                     RowLayout {
@@ -1144,6 +1314,62 @@ Item {
                 Item { Layout.fillWidth: true }
                 Btn { text: root.aMine ? "Cancel" : "Close"; onClicked: artistPopup.close() }
                 Btn { visible: root.aMine; text: root.artistBusy ? "Saving…" : (root.aId ? "Save" : "Add"); primary: true; enabled_: !root.artistBusy; onClicked: root.saveArtist() }
+            }
+        }
+    }
+
+    // ── crew slot ────────────────────────────────────────────────────────────────
+    Popup {
+        id: crewPopup
+        anchors.centerIn: Overlay.overlay
+        width: 440; modal: true; padding: 20
+        background: Rectangle { radius: 12; color: root.cSurface; border.width: 1; border.color: root.cSurface2 }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 8
+            LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight; color: root.cText; font.pixelSize: 18; font.weight: Theme.typography.weightMedium
+                text: !root.cId ? "Add to the crew" : cName.text ? root.kithName({ contact: root.cContact, name: cName.text }) : "Open: " + cRole.text }
+            LogosText { textFormat: Text.PlainText; visible: !root.cMine; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cFaint; font.pixelSize: 12
+                text: "Only the person who added this can change it. Editors can remove it." }
+            LogosText { textFormat: Text.PlainText; text: "Role"; color: root.cFaint; font.pixelSize: 11 }
+            Flow {
+                Layout.fillWidth: true; spacing: 6
+                Repeater {
+                    model: root.crewRoles
+                    delegate: Chip { required property var modelData; text: modelData; on: cRole.text === modelData
+                        opacity: root.cMine ? 1 : 0.5; onClicked: if (root.cMine) cRole.text = modelData }
+                }
+            }
+            Input { id: cRole; Layout.fillWidth: true; enabled: root.cMine; placeholderText: "Or type a role"; color: root.cText; font.pixelSize: 13 }
+            LogosText { textFormat: Text.PlainText; visible: root.cMine && root.kithState === "ok"; text: "From Kith"; color: root.cFaint; font.pixelSize: 11 }
+            Input { id: cSearch; visible: root.cMine && root.kithState === "ok"; Layout.fillWidth: true; placeholderText: "Search contacts"; color: root.cText; font.pixelSize: 13; onTextChanged: root.cQuery = text }
+            Flow {
+                visible: root.cMine && root.kithState === "ok"; Layout.fillWidth: true; spacing: 6
+                Repeater {
+                    model: root.cMatches
+                    delegate: Chip { required property var modelData; text: modelData.name; on: root.cContact === modelData.id
+                        onClicked: { root.cContact = modelData.id; root.cBook = modelData.bookId; cName.text = modelData.name } }
+                }
+            }
+            LogosText { textFormat: Text.PlainText; text: "Name" + (root.cContact ? "  ·  linked to Kith" : ""); color: root.cFaint; font.pixelSize: 11 }
+            Input { id: cName; Layout.fillWidth: true; enabled: root.cMine; placeholderText: "Leave empty for an open slot"; color: root.cText; font.pixelSize: 13
+                onTextEdited: { root.cContact = ""; root.cBook = "" } }
+            LogosText { textFormat: Text.PlainText; text: "Call time"; color: root.cFaint; font.pixelSize: 11 }
+            Input { id: cCall; Layout.fillWidth: true; enabled: root.cMine; placeholderText: "e.g. 21:30"; color: root.cText; font.pixelSize: 13 }
+            LogosText { textFormat: Text.PlainText; visible: cName.text.trim() !== ""; text: "Status"; color: root.cFaint; font.pixelSize: 11 }
+            Flow {
+                visible: cName.text.trim() !== ""; Layout.fillWidth: true; spacing: 6
+                Repeater {
+                    model: root.bookingStatuses
+                    delegate: Chip { required property var modelData; text: root.cap(modelData); accent: root.bookingColor(modelData); on: root.cStatus === modelData
+                        opacity: root.cMine ? 1 : 0.5; onClicked: if (root.cMine) root.cStatus = modelData }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true; Layout.topMargin: 8; spacing: 8
+                Btn { visible: root.cCanRemove; text: "Remove"; enabled_: !root.crewBusy; onClicked: root.removeCrew() }
+                Item { Layout.fillWidth: true }
+                Btn { text: root.cMine ? "Cancel" : "Close"; onClicked: crewPopup.close() }
+                Btn { visible: root.cMine; text: root.crewBusy ? "Saving…" : (root.cId ? "Save" : "Add"); primary: true; enabled_: !root.crewBusy; onClicked: root.saveCrew() }
             }
         }
     }

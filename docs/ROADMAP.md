@@ -39,7 +39,7 @@ and Android 0.3.0 (vc3) on [frequencies.vpavlin.xyz](https://frequencies.vpavlin
 
 | Module | Status |
 |---|---|
-| Crew: roster, assignments, "I'm here" check-in | ⬜ |
+| Crew: roster, assignments, "I'm here" check-in | 🧪 roles, call times, open slots and check-in per night ([ADR 0007](adr/0007-crew-on-the-night.md)); desktop `frequencies_ui` 0.4.0 + Android 0.4.0 in testing |
 | Gear: inventory, per-event checklist | ⬜ |
 | Tasks: lists, deadlines (as Scala events), reminders | ⬜ |
 | Availability polling | ⬜ |

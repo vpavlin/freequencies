@@ -2,6 +2,8 @@
 // (ns "xyz.frequencies", kind "artist") on the event, plus the "same artist booked twice" warning.
 // Pure; the desktop view (FrequenciesView.qml `lineupOf` / `doubleBookings`) mirrors it.
 
+import { crewOf } from "./crew.ts";
+
 export const NS = "xyz.frequencies";
 export const KIND_ARTIST = "artist";
 export type BookingStatus = "asked" | "confirmed" | "cancelled";
@@ -62,13 +64,15 @@ export interface DoubleBooking { artist: string; other: Night }
 
 const dayOf = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
 
-// key → the clashes of its non-cancelled artists with other nights: same artist on a night that
+// key → the clashes of its non-cancelled artists and crew with other nights: same person on a night that
 // overlaps it or starts on the same day. Nights without a clash are absent.
 export function doubleBookings(nights: Night[]): Map<string, DoubleBooking[]> {
   const byArtist = new Map<string, { night: Night; name: string }[]>();
   for (const n of nights) {
     const seen = new Set<string>();
-    for (const b of lineupOf(n)) {
+    // Artists and named crew (ADR 0007): one person can't be in two places either way.
+    const people = [...lineupOf(n), ...crewOf(n).filter((c) => c.name)];
+    for (const b of people) {
       if (b.status === "cancelled") continue;
       const k = artistKey(b);
       if (seen.has(k)) continue;

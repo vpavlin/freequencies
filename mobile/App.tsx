@@ -31,6 +31,7 @@ import { setAppId as wbSetAppId, createWhisperbox } from "./src/whisperbox/rn";
 // @ts-ignore - plain ESM shared with WhisperBox's desktop core
 import { template as wbTemplate } from "./src/whisperbox/templates/templates.mjs";
 import { lineupOf, doubleBookings, feeLabel, totalFees, Booking, BookingStatus, STATUSES as BOOKING_STATUSES, NS, KIND_ARTIST } from "./src/app/lineup";
+import { crewOf, crewSummary, crewSummaryLabel, checkinId, CrewSlot, CrewStatus, CREW_STATUSES, ROLES, KIND_CREW, KIND_CHECKIN } from "./src/app/crew";
 
 // Scala's Catppuccin tokens, so the two apps look like one family.
 const C = {
@@ -168,6 +169,11 @@ export default function App() {
     const byId = new Map(events.map((e) => [e.id, e as Occ]));
     return doubleBookings(nights.map((n) => ({ key: `${n.id}@${n.occ}`, startTime: n.startTime, endTime: n.endTime, title: n.title, ext: byId.get(n.id)?.ext })));
   }, [nights, events]);
+  const crewLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of events) { const l = crewSummaryLabel(crewSummary(crewOf(e as Occ))); if (l) m.set(e.id, l); }
+    return m;
+  }, [events]);
   const venues = useMemo(() => [...new Set(nights.map((n) => fieldOf(n, "venue")).filter(Boolean))].sort(), [nights]);
   const days = useMemo(() => {
     const shown = nights.filter((n) => (!venueFilter || fieldOf(n, "venue") === venueFilter) && (!statusFilter || fieldOf(n, "status") === statusFilter));
@@ -258,6 +264,56 @@ export default function App() {
   };
   const bookingColor = (st: BookingStatus) => (st === "confirmed" ? C.green : st === "cancelled" ? C.red : C.yellow);
   const statusWord = (st: BookingStatus) => st.charAt(0).toUpperCase() + st.slice(1);
+
+  // ── crew (ADR 0007) ──
+  const crew = useMemo(() => crewOf(selMaster || {}), [selMaster]);
+  const [crewOpen, setCrewOpen] = useState(false);
+  const blankCrew = { id: "", name: "", contact: "", book: "", role: "", call: "", status: "asked" as CrewStatus };
+  const [cd, setCd] = useState(blankCrew);
+  const [crewQuery, setCrewQuery] = useState("");
+  const crewBusy = useRef(false);
+  const openCrew = (c?: CrewSlot) => {
+    setCd(c ? { id: c.id, name: c.name, contact: c.contact, book: c.book, role: c.role, call: c.call, status: c.status } : blankCrew);
+    setCrewQuery("");
+    setCrewOpen(true);
+  };
+  const crewMatches = useMemo(() => {
+    const q = crewQuery.trim().toLowerCase();
+    if (!q) return artists.slice(0, 8);
+    return artists.filter((a) => a.contact.name.display.toLowerCase().includes(q)).slice(0, 8);
+  }, [artists, crewQuery]);
+  const saveCrew = async () => {
+    if (!selMaster || crewBusy.current) return;
+    const name = cd.name.trim(), role = cd.role.trim();
+    if (!name && !role) { Alert.alert("Give a role or a name", "A role without a name is an open slot."); return; }
+    const data: Record<string, unknown> = { name, role, status: cd.status };
+    if (name && cd.contact) { data.contact = cd.contact; data.book = cd.book; }
+    if (cd.call.trim()) data.call = cd.call.trim();
+    crewBusy.current = true;
+    try {
+      await postExt(selMaster.calendarId, { ns: NS, kind: KIND_CREW, target: selMaster.id, id: cd.id || undefined, data });
+      setCrewOpen(false); toast(cd.id ? "Crew updated" : name ? "Added to the crew" : "Open slot added"); await reload();
+    } catch (e) { Alert.alert("Couldn't save", msg(e)); }
+    finally { crewBusy.current = false; }
+  };
+  const removeCrew = (c: CrewSlot) => {
+    if (!selMaster) return;
+    Alert.alert(`Remove ${c.name || "this " + (c.role || "slot")}?`, "It comes off this night's crew for everyone.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: () => { deleteExt(selMaster.calendarId, c.id).then(() => { setCrewOpen(false); toast("Removed"); return reload(); }).catch((e) => Alert.alert("Couldn't remove", msg(e))); } },
+    ]);
+  };
+  // Anyone on the door can check someone in; undoing is for whoever did it, or an editor.
+  const toggleCheckin = async (c: CrewSlot) => {
+    if (!selMaster || crewBusy.current || !c.name) return;
+    crewBusy.current = true;
+    try {
+      if (c.checkedIn) await deleteExt(selMaster.calendarId, c.checkedIn.id);
+      else await postExt(selMaster.calendarId, { ns: NS, kind: KIND_CHECKIN, target: selMaster.id, id: checkinId(c.id), data: { crew: c.id, at: Date.now() } });
+      toast(c.checkedIn ? "Check-in undone" : `${c.name} is here`); await reload();
+    } catch (e) { Alert.alert("Couldn't check in", msg(e)); }
+    finally { crewBusy.current = false; }
+  };
 
   // ── forms (ADR 0005) ──
   const nightForms = useMemo(() => formsOf(selMaster), [selMaster]);
@@ -477,6 +533,7 @@ export default function App() {
                           <View style={{ flex: 1 }}>
                             <Text style={[s.nightT, st === "Cancelled" && { textDecorationLine: "line-through", color: C.sub }]} numberOfLines={1}>{n.title || "(untitled)"}</Text>
                             <Text style={s.nightS} numberOfLines={1}>{fmtTime(n.startTime)}{fieldOf(n, "venue") ? ` · ${fieldOf(n, "venue")}` : ""}{st ? ` · ${st}` : ""}</Text>
+                            {crewLabels.has(n.id) && <Text style={s.nightS} numberOfLines={1}>Crew: {crewLabels.get(n.id)}</Text>}
                             {doubles.has(`${n.id}@${n.occ}`) && <Text style={s.warn} numberOfLines={1}>⚠ {doubles.get(`${n.id}@${n.occ}`)![0].artist} is also booked at {doubles.get(`${n.id}@${n.occ}`)![0].other.title || "another night"}</Text>}
                           </View>
                         </Pressable>
@@ -540,6 +597,31 @@ export default function App() {
                     {selOcc && doubles.get(`${selOcc.id}@${selOcc.occ}`)?.map((d, i) => (
                       <Text key={i} style={s.warn}>⚠ {d.artist} is also booked at {d.other.title || "another night"}, {new Date(d.other.startTime).toLocaleDateString(undefined, { day: "numeric", month: "short" })} {fmtTime(d.other.startTime)}</Text>
                     ))}
+                    <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                      <Text style={[s.label, { flex: 1 }]}>Crew{crewSummaryLabel(crewSummary(crew)) ? ` (${crewSummaryLabel(crewSummary(crew))})` : ""}</Text>
+                      <Pressable hitSlop={8} onPress={() => openCrew()} style={{ marginBottom: 6 }}><Text style={{ color: C.blue, fontSize: 13 }}>+ Crew</Text></Pressable>
+                    </View>
+                    {crew.length === 0 && <Text style={s.sub}>No crew yet. Add people, or a role with no name as an open slot.</Text>}
+                    {crew.map((c) => {
+                      const canUndo = !!c.checkedIn && (c.checkedIn.author === meFor[selMaster.calendarId] || isEditorOf(cals.find((x) => x.id === selMaster.calendarId)));
+                      return (
+                        <Pressable key={c.id} onPress={() => openCrew(c)} style={s.booking}>
+                          <View style={[s.dot, { backgroundColor: c.name ? bookingColor(c.status) : C.faint }]} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.body, c.status === "cancelled" && { textDecorationLine: "line-through", color: C.sub }, !c.name && { color: C.sub, fontStyle: "italic" }]} numberOfLines={1}>
+                              {c.role ? `${c.role}: ` : ""}{c.name ? kithName(c) : "open"}
+                            </Text>
+                            <Text style={s.sub} numberOfLines={1}>{[c.call && `from ${c.call}`, c.name ? statusWord(c.status) : "", c.checkedIn ? `here ${fmtTime(c.checkedIn.at)}` : ""].filter(Boolean).join(" · ")}</Text>
+                          </View>
+                          {!!c.name && c.status !== "cancelled" && (!c.checkedIn || canUndo) && (
+                            <Pressable hitSlop={6} onPress={() => toggleCheckin(c)} style={[s.smallBtn, c.checkedIn && { backgroundColor: C.green }]}>
+                              <Text style={s.smallBtnT}>{c.checkedIn ? "Here ✓" : "Check in"}</Text>
+                            </Pressable>
+                          )}
+                          {!!c.checkedIn && !canUndo && <Text style={{ color: C.green, fontSize: 12 }}>Here ✓</Text>}
+                        </Pressable>
+                      );
+                    })}
                     <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
                       <Text style={[s.label, { flex: 1 }]}>Forms ({nightForms.length})</Text>
                       <Pressable hitSlop={8} onPress={() => setFormOpen(true)} style={{ marginBottom: 6 }}><Text style={{ color: C.blue, fontSize: 13 }}>+ Form</Text></Pressable>
@@ -634,6 +716,56 @@ export default function App() {
                         {canRemove ? <Pressable onPress={() => editing && removeArtist(editing)} style={[s.secondaryBtn, { flex: 1 }]}><Text style={[s.secondaryBtnT, { color: C.red }]}>Remove</Text></Pressable>
                           : <Pressable onPress={() => setArtistOpen(false)} style={[s.secondaryBtn, { flex: 1 }]}><Text style={s.secondaryBtnT}>Cancel</Text></Pressable>}
                         {mine && <Pressable onPress={saveArtist} style={[s.primaryBtn, { flex: 1 }]}><Text style={s.primaryBtnT}>{editing ? "Save" : "Add"}</Text></Pressable>}
+                      </View>
+                    </ScrollView>
+                  );
+                })()}
+              </View>
+            </KeyboardAvoidingView>
+          </Modal>
+
+          {/* ── crew slot ── */}
+          <Modal visible={crewOpen} transparent animationType="slide" onRequestClose={() => setCrewOpen(false)}>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={s.sheetWrap}>
+              <View style={s.sheet}>
+                {(() => {
+                  const editing = crew.find((c) => c.id === cd.id);
+                  const mine = !editing || editing.author === meFor[selMaster?.calendarId || ""];
+                  const canRemove = !!editing && (mine || isEditorOf(cals.find((c) => c.id === selMaster?.calendarId)));
+                  return (
+                    <ScrollView keyboardShouldPersistTaps="handled">
+                      <View style={{ flexDirection: "row" }}>
+                        <Text style={[s.sheetTitle, { flex: 1 }]}>{editing ? (editing.name ? kithName(editing) : `Open: ${editing.role}`) : "Add to the crew"}</Text>
+                        <Pressable hitSlop={10} onPress={() => setCrewOpen(false)}><Text style={s.close}>✕</Text></Pressable>
+                      </View>
+                      {!mine && <Text style={s.readonly}>Only the person who added this can change it. Editors can remove it.</Text>}
+                      <Text style={s.label}>Role</Text>
+                      <View style={s.wrap}>{ROLES.map((r) => <Chip key={r} label={r} on={cd.role === r} onPress={() => { if (mine) setCd({ ...cd, role: r }); }} />)}</View>
+                      <TextInput style={[s.input, { marginTop: 8 }]} value={cd.role} editable={mine} onChangeText={(t) => setCd({ ...cd, role: t })} placeholder="Or type a role" placeholderTextColor={C.faint} />
+                      {mine && kithBooks.length > 0 && (<>
+                        <Text style={s.label}>From Kith</Text>
+                        <TextInput style={s.input} value={crewQuery} onChangeText={setCrewQuery} placeholder="Search contacts" placeholderTextColor={C.faint} />
+                        <View style={[s.wrap, { marginTop: 8 }]}>
+                          {crewMatches.map((a) => (
+                            <Chip key={a.contact.id} label={a.contact.name.display} on={cd.contact === a.contact.id}
+                              onPress={() => setCd({ ...cd, contact: a.contact.id, book: a.bookId, name: a.contact.name.display })} />
+                          ))}
+                          {crewMatches.length === 0 && <Text style={s.sub}>No match in Kith.</Text>}
+                        </View>
+                      </>)}
+                      <Text style={s.label}>Name</Text>
+                      <TextInput style={s.input} value={cd.name} editable={mine} onChangeText={(t) => setCd({ ...cd, name: t, ...(cd.contact && t !== cd.name ? { contact: "", book: "" } : {}) })} placeholder="Leave empty for an open slot" placeholderTextColor={C.faint} />
+                      {!!cd.contact && <Text style={s.sub}>Linked to Kith</Text>}
+                      <Text style={s.label}>Call time</Text>
+                      <TextInput style={s.input} value={cd.call} editable={mine} onChangeText={(t) => setCd({ ...cd, call: t })} placeholder="e.g. 21:30" placeholderTextColor={C.faint} />
+                      {!!cd.name.trim() && (<>
+                        <Text style={s.label}>Status</Text>
+                        <View style={s.wrap}>{CREW_STATUSES.map((st) => <Chip key={st} label={statusWord(st)} on={cd.status === st} color={bookingColor(st)} onPress={() => { if (mine) setCd({ ...cd, status: st }); }} />)}</View>
+                      </>)}
+                      <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                        {canRemove ? <Pressable onPress={() => editing && removeCrew(editing)} style={[s.secondaryBtn, { flex: 1 }]}><Text style={[s.secondaryBtnT, { color: C.red }]}>Remove</Text></Pressable>
+                          : <Pressable onPress={() => setCrewOpen(false)} style={[s.secondaryBtn, { flex: 1 }]}><Text style={s.secondaryBtnT}>Cancel</Text></Pressable>}
+                        {mine && <Pressable onPress={saveCrew} style={[s.primaryBtn, { flex: 1 }]}><Text style={s.primaryBtnT}>{editing ? "Save" : "Add"}</Text></Pressable>}
                       </View>
                     </ScrollView>
                   );

@@ -48,7 +48,7 @@ QString MockLogos::callModule(const QString &mod, const QString &method, const Q
     }
     if (mod == "kith") {                      // the kith core: one artist book
         if (method == "listBooks") return R"([{"id":"b1","name":"Artists","contactCount":3}])";
-        if (method == "listContacts") return R"([{"id":"k1","name":{"display":"DJ Nikola"}},{"id":"k2","name":{"display":"Mira Vex"}},{"id":"k3","name":"broken"},{"id":"k4","name":{"display":"Oskar B2B Lena"}}])";
+        if (method == "listContacts") return R"([{"id":"k1","name":{"display":"DJ Nikola"}},{"id":"k2","name":{"display":"Mira Vex"}},{"id":"k3","name":"broken"},{"id":"k4","name":{"display":"Oskar B2B Lena"}},{"id":"k5","name":{"display":"Jana Dvořáková"}}])";
         return "";
     }
     if (method != "listCalendars" && method != "listAllEvents" && method != "coreVersion") {
@@ -132,7 +132,23 @@ int main(int argc, char **argv) {
     n1ext.append(form("form-a1","0xme","guestlist","Guest list: Bassline Fridays"));
     n1ext.append(form("form-b2","0xpromoter111111","crew","Crew for Bassline Fridays"));
     n1ext.append(QJsonObject{{"ns","xyz.frequencies"},{"kind","form"},{"target","n1"},{"id","bad"},{"data",42}});
-    QJsonArray n2ext{artist("b1","n2","0xme",QJsonObject{{"name","DJ Nikola (renamed)"},{"contact","k1"},{"set","02:00–04:00"},{"status","asked"}})};
+    auto crewItem = [&](const QString &id, const QString &target, const QString &author, const QJsonObject &data) {
+        return QJsonObject{{"ns","xyz.frequencies"},{"kind","crew"},{"target",target},{"id",id},{"author",author},
+                           {"hlc",QJsonObject{{"wall",double(at(-1,12))},{"ctr",0},{"dev","d"}}},{"data",data}};
+    };
+    auto checkin = [&](const QString &slot, const QString &author, double when) {
+        return QJsonObject{{"ns","xyz.frequencies"},{"kind","checkin"},{"target","n1"},{"id","checkin:"+slot},{"author",author},
+                           {"hlc",QJsonObject{{"wall",when},{"ctr",0},{"dev","d"}}},{"data",QJsonObject{{"crew",slot},{"at",when}}}};
+    };
+    n1ext.append(crewItem("cr1","n1","0xme",QJsonObject{{"name","Jana Door"},{"contact","k5"},{"book","b2"},{"role","Door"},{"call","21:30"},{"status","confirmed"}}));
+    n1ext.append(crewItem("cr2","n1","0xme",QJsonObject{{"name","Petr"},{"role","Bar"},{"call","21:00"},{"status","asked"}}));
+    n1ext.append(crewItem("cr3","n1","0xpromoter111111",QJsonObject{{"name",""},{"role","Bar"},{"call","22:00"}}));
+    n1ext.append(crewItem("cr4","n1","0xpromoter111111",QJsonObject{{"name","Ota"},{"role","Sound"},{"call","20:00"},{"status","confirmed"}}));
+    n1ext.append(crewItem("cr5","n1","0xme",QJsonValue(7).toObject()));
+    n1ext.append(checkin("cr4","0xpromoter111111",double(at(0,20))));
+    n1ext.append(checkin("cr3","0xme",double(at(0,20))));   // open slot: ignored
+    QJsonArray n2ext{artist("b1","n2","0xme",QJsonObject{{"name","DJ Nikola (renamed)"},{"contact","k1"},{"set","02:00–04:00"},{"status","asked"}}),
+                     crewItem("cr9","n2","0xme",QJsonObject{{"name","Jana D."},{"contact","k5"},{"role","Bar"},{"status","asked"}})};
     QJsonArray evs{
         night("n1","c1",at(0),6,"Bassline Fridays","Confirmed","Cross Club",n1ext),
         night("n2","c1",at(0,23),5,"Techno Lab","Hold","Ankali",n2ext),
@@ -174,7 +190,11 @@ int main(int argc, char **argv) {
     QTimer::singleShot(6500, [&] { grab(&view, out + "/11-add-form.png"); runJs(&view, "addForm('booking')"); });
     QTimer::singleShot(6900, [&] { runJs(&view, "openResponses(formsOf(selMaster)[0])"); });
     QTimer::singleShot(7300, [&] { grab(&view, out + "/12-answers.png"); });
-    QTimer::singleShot(7500, [&] { app.quit(); });
+    QTimer::singleShot(7500, [&] { runJs(&view, "respPopup.close(); panelFlick.contentY = 300"); });
+    QTimer::singleShot(7800, [&] { grab(&view, out + "/13-crew.png"); runJs(&view, "openCrew(null)"); });
+    QTimer::singleShot(8200, [&] { runJs(&view, "cRole.text = 'Bar'; cSearch.text = 'ja'"); });
+    QTimer::singleShot(8500, [&] { grab(&view, out + "/14-add-crew.png"); runJs(&view, "crewPopup.close()"); });
+    QTimer::singleShot(8800, [&] { app.quit(); });
     return app.exec();
 }
 #include "harness.moc"

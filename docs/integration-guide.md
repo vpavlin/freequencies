@@ -24,8 +24,8 @@ the host's wire format.** Two places are open to you in Scala:
   `status` (Hold / Confirmed / Cancelled), `venue` and `type`.
 - **`ext` items** attached to an event (Scala ADR 0021): `{ns, kind, target, id, data}`. Scala
   stores, signs, syncs and access-checks them but never reads `data`. Frequencies uses
-  `ns: "xyz.frequencies"` with kinds `artist` (a line-up booking) and `form` (a linked
-  WhisperBox form). Comments are Scala's own `ext` kind (`ns: "scala"`, `kind: "comment"`).
+  `ns: "xyz.frequencies"` with kinds `artist` (a line-up booking), `crew` (a crew slot), `checkin`
+  (someone arrived) and `form` (a linked WhisperBox form). Comments are Scala's own `ext` kind (`ns: "scala"`, `kind: "comment"`).
 
 Rules that come with `ext`: the first author of an `id` owns it and is the only one who can change
 its `data` by posting the same `id` again; the author or a calendar owner/editor can delete it.
