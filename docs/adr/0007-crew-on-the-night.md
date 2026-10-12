@@ -15,7 +15,7 @@ night.
 
 1. **A crew slot is a Scala `ext` item on the night**, like a booking:
    ```jsonc
-   { "ns": "xyz.frequencies", "kind": "crew", "target": "<event id>", "id": "<stable id>",
+   { "ns": "xyz.freequencies", "kind": "crew", "target": "<event id>", "id": "<stable id>",
      "data": { "name": "Jana",                     // snapshot; may be "" for an open slot
                "contact": "<kith contact id>", "book": "<kith book id>",   // optional
                "role": "Door",                     // free text; the app suggests common roles
@@ -26,7 +26,7 @@ night.
    from any Kith book the organiser has (the artists' book or a separate "Crew" book) or are typed in.
 2. **Check-in is a separate item, so anyone on the door can do it:**
    ```jsonc
-   { "ns": "xyz.frequencies", "kind": "checkin", "target": "<event id>", "id": "checkin:<crew item id>:<random>",
+   { "ns": "xyz.freequencies", "kind": "checkin", "target": "<event id>", "id": "checkin:<crew item id>:<random>",
      "data": { "crew": "<crew item id>", "at": 1760212800000 } }
    ```
    The id starts with the slot's id, so a check-in can't be filed under another slot. Each check-in gets a
@@ -57,4 +57,4 @@ Kith, and this ADR is revisited. Until then this is a deliberate, smaller step t
 ## Consequences
 
 - No change to Scala's or Kith's formats; two new `ext` kinds in our namespace.
-- Older Frequencies versions ignore `crew` and `checkin` items.
+- Older Freequencies versions ignore `crew` and `checkin` items.

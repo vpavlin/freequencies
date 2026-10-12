@@ -13,13 +13,13 @@ a property of the night.
 ## Decision
 
 1. **Artists are Kith contacts.** The crew keeps a shared Kith book (by convention named "Artists") with
-   the artists' contact details. Frequencies reads it: on desktop through the `kith` core module
+   the artists' contact details. Freequencies reads it: on desktop through the `kith` core module
    (`searchContacts`, `getContact`), on Android through
    [kith-sdk](https://github.com/vpavlin/kith-sdk) (Kith ADR 0011), joined with the book's Kith invite
-   link. Frequencies never writes to Kith contacts, and adds no fields to them.
+   link. Freequencies never writes to Kith contacts, and adds no fields to them.
 2. **A booking is a Scala `ext` item on the night** (Scala ADR 0021):
    ```jsonc
-   { "ns": "xyz.frequencies", "kind": "artist", "target": "<event id>", "id": "<stable id>",
+   { "ns": "xyz.freequencies", "kind": "artist", "target": "<event id>", "id": "<stable id>",
      "data": { "name": "DJ Example",          // snapshot, shown even without Kith
                "contact": "<kith contact id>", "book": "<kith book id>",   // optional
                "fee": 250, "currency": "EUR",  // optional
@@ -47,7 +47,7 @@ a property of the night.
 
 ## Consequences
 
-- No change to Kith's or Scala's data format; Frequencies reads both and writes only its own `ext` items.
+- No change to Kith's or Scala's data format; Freequencies reads both and writes only its own `ext` items.
 - Renaming a contact in Kith doesn't rename old bookings (they keep the snapshot); the view shows the
   current Kith name when the contact is available.
 - Android needs a second engine in the app (kith-sdk next to scala-sdk) sharing one loam-transport.

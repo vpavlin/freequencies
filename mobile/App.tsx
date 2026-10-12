@@ -1,10 +1,10 @@
-// Frequencies (Android) — organise club nights on top of Scala's calendars.
+// Freequencies (Android) — organise club nights on top of Scala's calendars.
 //
 // Built on scala-sdk (mounted at src/lib): the same calendars, fields and comments as the Scala app
-// and the desktop Frequencies view (ADR 0002). A night is a Scala event; Frequencies data is the
+// and the desktop Freequencies view (ADR 0002). A night is a Scala event; Freequencies data is the
 // calendar's Status / Venue / Type fields plus Scala's comments (ext items, ns "scala").
 // Artists come from Kith (kith-sdk, mounted at src/kith); each night's line-up and fees are
-// Frequencies ext items on the night (ADR 0004, src/app/lineup.ts). Booking / crew / guest-list /
+// Freequencies ext items on the night (ADR 0004, src/app/lineup.ts). Booking / crew / guest-list /
 // feedback forms are WhisperBox forms (whisperbox-sdk at src/whisperbox) linked to the night as ext
 // items, kind "form" (ADR 0005). All three engines share the one loam-transport.
 // Sync goes through the phone's shared Loam node only (no embedded node): Loam must be installed.
@@ -40,7 +40,7 @@ const C = {
   faint: "#6c7086", blue: "#89b4fa", yellow: "#f9e2af", green: "#a6e3a1", red: "#f38ba8", mauve: "#cba6f7",
 };
 
-// ── the Frequencies schema (same contract as the desktop view, ADR 0002) ──────
+// ── the Freequencies schema (same contract as the desktop view, ADR 0002) ──────
 const STATUSES = ["Hold", "Confirmed", "Cancelled"];
 const TYPES = ["Club night", "Concert", "Residency", "Other"];
 const FREQ_FIELDS = [
@@ -59,8 +59,8 @@ const fmtTime = (t: number) => new Date(t).toLocaleTimeString(undefined, { hour:
 const toast = (m: string) => { if (Platform.OS === "android") ToastAndroid.show(m, ToastAndroid.SHORT); };
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-// One WhisperBox client for the app, on the scala-sdk transport (registered as "frequencies").
-wbSetAppId("frequencies");
+// One WhisperBox client for the app, on the scala-sdk transport (registered as "freequencies").
+wbSetAppId("freequencies");
 const wb = createWhisperbox({ transport: transport as any });
 
 const PURPOSES: { id: string; label: string }[] = [
@@ -70,7 +70,7 @@ const PURPOSES: { id: string; label: string }[] = [
 const purposeLabel = (p: string) => PURPOSES.find((x) => x.id === p)?.label || "Form";
 type NightForm = { id: string; author: string; formId: string; uri: string; purpose: string; title: string };
 const str = (v: unknown) => (typeof v === "string" ? v : "");
-// Forms linked to a night: ext items ns "xyz.frequencies" kind "form" (other members write these: typed reads).
+// Forms linked to a night: ext items ns "xyz.freequencies" kind "form" (other members write these: typed reads).
 function formsOf(ev: any): NightForm[] {
   const xs = Array.isArray(ev?.ext) ? ev.ext : [];
   const out: NightForm[] = [];
@@ -112,10 +112,10 @@ export default function App() {
   }, []);
 
   // Name ourselves to Loam BEFORE anything touches the transport (the shared backend is chosen once).
-  // Both engines (Scala's and Kith's) register as "frequencies" and share one transport.
+  // Both engines (Scala's and Kith's) register as "freequencies" and share one transport.
   useEffect(() => {
-    setAppId("frequencies");
-    kith.setAppId("frequencies");
+    setAppId("freequencies");
+    kith.setAppId("freequencies");
     reload(); reloadKith();
     const off = onChange(() => { reload(); });
     const offK = kith.onChange(() => { reloadKith(); });
@@ -315,7 +315,7 @@ export default function App() {
     const crewCal = cals.find((c) => c.id === selMaster.calendarId);
     pubBusy.current = true;
     let cal: Calendar | null = null;
-    try { cal = await createCalendar(`${crewCal?.name || "Our nights"} (public)`, crewCal?.color || "#89b4fa", "What's on. Published from Frequencies.", undefined, { open: false }); }
+    try { cal = await createCalendar(`${crewCal?.name || "Our nights"} (public)`, crewCal?.color || "#89b4fa", "What's on. Published from Freequencies.", undefined, { open: false }); }
     catch (e) { Alert.alert("Couldn't create the calendar", msg(e)); }
     finally { pubBusy.current = false; }
     if (cal) await makePublic(cal.id);
@@ -473,7 +473,7 @@ export default function App() {
   const creating = useRef(false);
   const openNew = (day?: number) => {
     const writable = freqCals.filter(canAddTo);
-    if (!writable.length) { Alert.alert("No calendar to add to", "Set up a calendar for Frequencies first (Calendars)."); return; }
+    if (!writable.length) { Alert.alert("No calendar to add to", "Set up a calendar for Freequencies first (Calendars)."); return; }
     setNf({ calId: writable.some((c) => c.id === nf.calId) ? nf.calId : writable[0].id, title: "", date: day ?? firstDay, start: "22:00", end: "04:00", venue: venueFilter, status: "Hold" });
     setNewOpen(true);
   };
@@ -502,9 +502,9 @@ export default function App() {
   const [joinLink, setJoinLink] = useState("");
   const [busy, setBusy] = useState("");
   const adoptBlocker = (c: Calendar): string => {
-    if (!isEditorOf(c)) return "Only its owner or editors can add Frequencies fields";
+    if (!isEditorOf(c)) return "Only its owner or editors can add Freequencies fields";
     const sf = statusField(c);
-    if (sf && !isFreqStatusField(sf)) return "Has its own “status” field, so Frequencies leaves it alone";
+    if (sf && !isFreqStatusField(sf)) return "Has its own “status” field, so Freequencies leaves it alone";
     for (const f of c.schema || []) {
       if (f?.key === "venue" && f.type && f.type !== "text") return "Has its own “venue” field of another kind";
       if (f?.key === "type" && f.type && f.type !== "enum") return "Has its own “type” field of another kind";
@@ -517,7 +517,7 @@ export default function App() {
     const schema = [...(c.schema || [])];
     for (const f of FREQ_FIELDS) if (!schema.some((x: any) => x?.key === f.key)) schema.push(f);
     setBusy(c.id);
-    try { await updateCalendarMeta(c.id, { schema }); toast(`“${c.name}” now uses Frequencies`); await reload(); }
+    try { await updateCalendarMeta(c.id, { schema }); toast(`“${c.name}” now uses Freequencies`); await reload(); }
     catch (e) { Alert.alert("Couldn't update the calendar", msg(e)); }
     finally { setBusy(""); }
   };
@@ -560,10 +560,10 @@ export default function App() {
         <SafeAreaView style={s.root}>
           <StatusBar style="light" />
           <View style={s.header}>
-            <Text style={s.title}>Frequencies</Text>
+            <Text style={s.title}>Freequencies</Text>
             <Pressable onPress={() => setCalsOpen(true)} style={s.headerBtn}><Text style={s.headerBtnT}>Calendars</Text></Pressable>
           </View>
-          <SharedNodeStatus appName="Frequencies" showSync style={{ marginHorizontal: 14 }} />
+          <SharedNodeStatus appName="Freequencies" showSync style={{ marginHorizontal: 14 }} />
 
           <View style={s.rangeBar}>
             <Pressable hitSlop={10} onPress={() => shift(-7)}><Text style={s.nav}>‹</Text></Pressable>
@@ -579,7 +579,7 @@ export default function App() {
 
           {loading ? <ActivityIndicator color={C.mauve} style={{ marginTop: 40 }} /> : freqCals.length === 0 ? (
             <View style={{ padding: 20, gap: 12 }}>
-              <Text style={s.empty}>No Frequencies calendars yet.</Text>
+              <Text style={s.empty}>No Freequencies calendars yet.</Text>
               <Text style={s.emptySub}>Open Calendars to create one, join one from an invite link, or set up a Scala calendar you already have.</Text>
               <Pressable onPress={() => setCalsOpen(true)} style={s.primaryBtn}><Text style={s.primaryBtnT}>Open Calendars</Text></Pressable>
             </View>
@@ -672,7 +672,7 @@ export default function App() {
                         <View style={s.booking}>
                           <View style={{ flex: 1 }}>
                             <Text style={s.body} numberOfLines={1}>{pc ? `Public in “${pc.name}”` : "Public in a calendar not on this phone"}</Text>
-                            <Text style={s.sub}>{mirrorBlocked.has(selMaster.id) ? `You can't update the public copy: ask an editor of “${pc?.name || "the public calendar"}” to open Frequencies.`
+                            <Text style={s.sub}>{mirrorBlocked.has(selMaster.id) ? `You can't update the public copy: ask an editor of “${pc?.name || "the public calendar"}” to open Freequencies.`
                               : "Attendees see the time, venue, confirmed artists and the guest-list link. Nothing else."}</Text>
                             <View style={{ flexDirection: "row", gap: 16, marginTop: 4 }}>
                               {!!pc && isEditorOf(pc) && <Pressable hitSlop={6} onPress={() => sharePublic(pc.id, "viewer")}><Text style={{ color: C.blue, fontSize: 12 }}>Share with attendees</Text></Pressable>}
@@ -823,7 +823,7 @@ export default function App() {
                   <Text style={[s.sheetTitle, { flex: 1 }]}>Make this night public</Text>
                   <Pressable hitSlop={10} onPress={() => setPubOpen(false)}><Text style={s.close}>✕</Text></Pressable>
                 </View>
-                <Text style={[s.sub, { marginTop: 6 }]}>Frequencies keeps a copy of this night in a public calendar and updates it whenever the night changes. The copy has the time, venue, confirmed artists and the guest-list link; never fees, crew, holds, notes or comments.</Text>
+                <Text style={[s.sub, { marginTop: 6 }]}>Freequencies keeps a copy of this night in a public calendar and updates it whenever the night changes. The copy has the time, venue, confirmed artists and the guest-list link; never fees, crew, holds, notes or comments.</Text>
                 <Text style={s.label}>Publish to</Text>
                 {publicTargets.map((c) => (
                   <Pressable key={c.id} onPress={() => makePublic(c.id)} style={[s.booking, { paddingVertical: 14 }]}>
@@ -903,7 +903,7 @@ export default function App() {
                     <Text style={s.body}>{p.label}</Text>
                   </Pressable>
                 ))}
-                <Text style={[s.sub, { marginTop: 12 }]}>Forms made here belong to Frequencies on this phone: they don't show in the WhisperBox app.</Text>
+                <Text style={[s.sub, { marginTop: 12 }]}>Forms made here belong to Freequencies on this phone: they don't show in the WhisperBox app.</Text>
               </View>
             </View>
           </Modal>
@@ -968,7 +968,7 @@ export default function App() {
                     <Text style={[s.sheetTitle, { flex: 1 }]}>Calendars</Text>
                     <Pressable hitSlop={10} onPress={() => setCalsOpen(false)}><Text style={s.close}>✕</Text></Pressable>
                   </View>
-                  <Text style={s.label}>Frequencies calendars</Text>
+                  <Text style={s.label}>Freequencies calendars</Text>
                   {freqCals.length === 0 ? <Text style={s.sub}>None yet.</Text> : freqCals.map((c) => <Text key={c.id} style={s.calRow}>● {c.name}</Text>)}
                   <Text style={s.label}>New calendar</Text>
                   <View style={{ flexDirection: "row", gap: 8 }}>
@@ -987,7 +987,7 @@ export default function App() {
                       <View key={c.id} style={{ marginTop: 8 }}>
                         <Text style={s.body}>{c.name}</Text>
                         {why ? <Text style={s.sub}>{why}</Text> : (
-                          <Pressable onPress={() => adopt(c)} disabled={!!busy}><Text style={{ color: C.blue, fontSize: 13 }}>{busy === c.id ? "Setting up…" : "Use for Frequencies"}</Text></Pressable>
+                          <Pressable onPress={() => adopt(c)} disabled={!!busy}><Text style={{ color: C.blue, fontSize: 13 }}>{busy === c.id ? "Setting up…" : "Use for Freequencies"}</Text></Pressable>
                         )}
                       </View>
                     );

@@ -1,10 +1,10 @@
 {
-  description = "Frequencies: organise club nights on top of the Scala calendar (pure-QML view over the scala core module)";
+  description = "Freequencies: organise club nights on top of the Scala calendar (pure-QML view over the scala core module)";
 
   inputs = {
     # The same builder the scala core and its view use (Basecamp 0.3).
     logos-module-builder.url = "github:logos-co/logos-module-builder/0.3.1";
-    # Frequencies reads and writes Scala's calendars through the scala core (comments need postExt: 0.12.0+).
+    # Freequencies reads and writes Scala's calendars through the scala core (comments need postExt: 0.12.0+).
     scala.url = "github:vpavlin/scala/ef7b1ffbb64ffe013717cbe2b4e65f22f4fa5ae6";
     # Artists come from Kith's books through the kith core (ADR 0004); kith 0.3.1.
     kith.url = "github:vpavlin/kith/d338a7852374bcdba40a32dcec8f399d20b078c5";

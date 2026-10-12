@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { lineupOf, doubleBookings, totalFees, feeLabel, artistKey } from "../src/app/lineup.ts";
 
-const item = (id: string, data: unknown, extra: object = {}) => ({ ns: "xyz.frequencies", kind: "artist", id, author: "a1", data, ...extra });
+const item = (id: string, data: unknown, extra: object = {}) => ({ ns: "xyz.freequencies", kind: "artist", id, author: "a1", data, ...extra });
 
 // lineupOf: typed reads, malformed skipped, sorted by set then name
 const ev = { ext: [

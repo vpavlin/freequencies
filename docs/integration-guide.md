@@ -1,8 +1,8 @@
 # Building on Scala, Kith and WhisperBox
 
 How an app reuses the calendars, contacts and forms of three existing Logos apps instead of
-writing its own, on Basecamp (desktop) and Android. Frequencies is the worked example: everything
-below is taken from its code (`frequencies-ui/qml/FrequenciesView.qml`, `mobile/App.tsx`) and its
+writing its own, on Basecamp (desktop) and Android. Freequencies is the worked example: everything
+below is taken from its code (`freequencies-ui/qml/FreequenciesView.qml`, `mobile/App.tsx`) and its
 ADRs (`docs/adr/0002`–`0005`).
 
 | You need | Reuse | Desktop | Android |
@@ -20,11 +20,11 @@ reads and writes through them; it never stores a copy and never invents its own 
 the host's wire format.** Two places are open to you in Scala:
 
 - **Custom fields** on a calendar's events (Scala ADR 0005). The calendar declares them in its
-  `schema`; every member sees them and Scala's own app shows and edits them. Frequencies uses
+  `schema`; every member sees them and Scala's own app shows and edits them. Freequencies uses
   `status` (Hold / Confirmed / Cancelled), `venue` and `type`.
 - **`ext` items** attached to an event (Scala ADR 0021): `{ns, kind, target, id, data}`. Scala
-  stores, signs, syncs and access-checks them but never reads `data`. Frequencies uses
-  `ns: "xyz.frequencies"` with kinds `artist` (a line-up booking), `crew` (a crew slot), `checkin`
+  stores, signs, syncs and access-checks them but never reads `data`. Freequencies uses
+  `ns: "xyz.freequencies"` with kinds `artist` (a line-up booking), `crew` (a crew slot), `checkin`
   (someone arrived) and `form` (a linked WhisperBox form). Comments are Scala's own `ext` kind (`ns: "scala"`, `kind: "comment"`).
 
 Rules that come with `ext`: the first author of an `id` owns it and is the only one who can change
@@ -40,7 +40,7 @@ Who a person is stays in Kith; what they answered stays in WhisperBox.
 A pure-QML view (`"type": "ui_qml"`) declares the modules it calls:
 
 ```json
-{ "name": "frequencies_ui", "type": "ui_qml", "view": "qml/FrequenciesView.qml",
+{ "name": "freequencies_ui", "type": "ui_qml", "view": "qml/FreequenciesView.qml",
   "dependencies": ["scala", "kith", "whisperbox_core"] }
 ```
 
@@ -57,7 +57,7 @@ function callVia(module, method, args, cb) {
 function core(method, args, cb) { callVia("scala", method, args, cb) }
 ```
 
-The calls Frequencies makes:
+The calls Freequencies makes:
 
 | Module | Call | For |
 |---|---|---|
@@ -65,7 +65,7 @@ The calls Frequencies makes:
 | `scala` | `createEvent(calId, eventJson)` | a new night with its custom fields |
 | `scala` | `getEvent(id)` then `updateEvent(eventJson)` | change a field: always start from the freshest copy, Scala replaces the whole event |
 | `scala` | `postExt(calId, itemJson)`, `deleteExt(calId, id)` | bookings, form links, comments |
-| `scala` | `updateCalendarMeta(calId, metaJson)` | add the Frequencies fields to a calendar's `schema` |
+| `scala` | `updateCalendarMeta(calId, metaJson)` | add the Freequencies fields to a calendar's `schema` |
 | `kith` | `listBooks()`, `listContacts(bookId)` | the artist picker |
 | `whisperbox_core` | `createForm(defJson)`, `shareUri(formId)` | create a form, get the link to share |
 | `whisperbox_core` | `formSummary(formId)` | open/closed, and the response count when you can read it |
@@ -74,7 +74,7 @@ The calls Frequencies makes:
 Adding a booking from the desktop:
 
 ```js
-var item = { ns: "xyz.frequencies", kind: "artist", target: night.id,
+var item = { ns: "xyz.freequencies", kind: "artist", target: night.id,
              data: { name: "DJ Example", contact: kithContactId, fee: 250, currency: "EUR",
                      set: "23:00–01:00", status: "asked" } }
 core("postExt", [night.calendarId, JSON.stringify(item)], function (r) { /* {ok, id} */ })
@@ -112,7 +112,7 @@ import * as kith from "./src/kith/contacts";
 import * as transport from "./src/lib/loam-transport";
 import { setAppId as wbSetAppId, createWhisperbox } from "./src/whisperbox/rn";
 
-setAppId("frequencies"); kith.setAppId("frequencies"); wbSetAppId("frequencies");
+setAppId("freequencies"); kith.setAppId("freequencies"); wbSetAppId("freequencies");
 const wb = createWhisperbox({ transport });
 
 await startSyncing(true);      // Scala, through the shared Loam node
@@ -120,7 +120,7 @@ await kith.startSyncing(true); // Kith joins the same transport
 await wb.boot();               // WhisperBox too
 ```
 
-The app then appears in Loam as one app ("frequencies"), approved once.
+The app then appears in Loam as one app ("freequencies"), approved once.
 
 Two packaging details for whisperbox-sdk:
 
@@ -136,16 +136,16 @@ The same writes as on the desktop:
 import { postExt } from "./src/lib/calendar";
 import { template } from "./src/whisperbox/templates/templates.mjs";
 
-await postExt(night.calendarId, { ns: "xyz.frequencies", kind: "artist", target: night.id,
+await postExt(night.calendarId, { ns: "xyz.freequencies", kind: "artist", target: night.id,
                                   data: { name: "DJ Example", fee: 250, currency: "EUR", status: "asked" } });
 
 const res = wb.client.createForm(template("guestlist", { title: "Guest list: Low End Theory" }));
 const { uri } = wb.client.shareUri(res.formId);
-await postExt(night.calendarId, { ns: "xyz.frequencies", kind: "form", target: night.id, id: res.formId,
+await postExt(night.calendarId, { ns: "xyz.freequencies", kind: "form", target: night.id, id: res.formId,
                                   data: { formId: res.formId, uri, purpose: "guestlist" } });
 ```
 
-Share one set of form templates between platforms: Frequencies generates the desktop's
+Share one set of form templates between platforms: Freequencies generates the desktop's
 `templates.js` from whisperbox-sdk's `templates.mjs` (`scripts/gen-qml-templates.mjs`, checked by
 `npm test`).
 
@@ -162,7 +162,7 @@ Share one set of form templates between platforms: Frequencies generates the des
 - **A form's answers are private to its creator** (and co-owners). Other calendar members can see that
   a night has a guest list, but not who is on it or how many answered; `formSummary` gives them only
   the title, open/closed and the number of confirmations the creator has sent.
-- **On Android each app has its own WhisperBox identity**, so forms created in Frequencies don't
+- **On Android each app has its own WhisperBox identity**, so forms created in Freequencies don't
   show in the WhisperBox app on the same phone. On desktop both share `whisperbox_core`.
 
 ## 5. Where to look
@@ -170,7 +170,7 @@ Share one set of form templates between platforms: Frequencies generates the des
 - **A minimal example to copy:** [`examples/scala-agenda`](../examples/scala-agenda): a complete
   Basecamp module in one QML file that reads Scala's calendars and posts a comment.
 
-- Frequencies ADRs: 0002 (desktop view over Scala), 0003 (Android on scala-sdk), 0004 (artists from
+- Freequencies ADRs: 0002 (desktop view over Scala), 0003 (Android on scala-sdk), 0004 (artists from
   Kith), 0005 (forms from WhisperBox), 0006 (budget from KYM, proposed).
 - Scala: `docs/sdk.md`, ADR 0005 (custom fields), 0021 (`ext` items), 0024 (comments), 0025 (scala-sdk).
 - Kith: ADR 0007 (app integration), 0011 (kith-sdk). WhisperBox: `docs/SPEC.md`, ADR 0018.

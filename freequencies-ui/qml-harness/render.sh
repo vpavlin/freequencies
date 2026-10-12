@@ -28,7 +28,7 @@ export QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STY
 IMPORTS="$QDECL/lib/qt-6/qml:$DS"
 export QML2_IMPORT_PATH="$IMPORTS" QML_IMPORT_PATH="$IMPORTS"
 export LD_LIBRARY_PATH="$QB/lib:$QDECL/lib"
-./harness "$HERE/../qml/FrequenciesView.qml" "$HERE/shots"
+./harness "$HERE/../qml/FreequenciesView.qml" "$HERE/shots"
 echo "→ shots/ : $(ls shots/*.png | wc -l) screenshots"
 echo "⚠️  DS 1.0.0 + Controls Basic — NOT Basecamp 0.2.x's bundle. Trust these for"
 echo "    'renders / no errors / structure', NOT for widths/overflow. DS layout → verify on host."

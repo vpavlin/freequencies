@@ -27,4 +27,4 @@ In Basecamp 0.3, install **Scala** from `https://apps.vpavlin.xyz/logos-repo.jso
 built `.lgx` with *Install local package*. The view appears as "Scala Agenda (example)".
 
 Left out to keep it short: recurring events (expand them as Scala does; see `expandEvent` in
-`frequencies-ui/qml/FrequenciesView.qml`) and editing events (`getEvent` then `updateEvent`).
+`freequencies-ui/qml/FreequenciesView.qml`) and editing events (`getEvent` then `updateEvent`).

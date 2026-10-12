@@ -7,7 +7,7 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-Third Frequencies-driven Scala extension: a "Lanes" view next to month,
+Third Freequencies-driven Scala extension: a "Lanes" view next to month,
 week and day. Rows are 14 days from the selected day (‹ › step a week),
 columns are the shown calendars or, with "By <field>", the values of an
 enum field across those calendars, so a promoter can see one column per

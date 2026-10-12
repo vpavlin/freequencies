@@ -1,6 +1,6 @@
-# Frequencies — notes for contributing agents
+# Freequencies — notes for contributing agents
 
-Frequencies is an event-organisation app for the club scene, composed from Logos/Basecamp modules
+Freequencies is an event-organisation app for the club scene, composed from Logos/Basecamp modules
 with Scala as the spine. Read `docs/adr/0001-architecture.md` and `docs/ROADMAP.md` first.
 
 - Follow the `logos-app-charter` skill (Basecamp + Android at parity, Loam, local-first, event log).

@@ -1,6 +1,6 @@
-// Offscreen render harness for FrequenciesView.qml: a mock `logos` bridge (callModuleAsync) that
+// Offscreen render harness for FreequenciesView.qml: a mock `logos` bridge (callModuleAsync) that
 // plays the Scala core with a few club nights, then screenshots the board, a selected night, the
-// status columns and the new-night dialog.   usage: harness <FrequenciesView.qml> <outDir>
+// status columns and the new-night dialog.   usage: harness <FreequenciesView.qml> <outDir>
 #include <QGuiApplication>
 #include <QQuickView>
 #include <QQmlContext>
@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
     QJsonArray comment{QJsonObject{{"ns","scala"},{"kind","comment"},{"target","n1"},{"id","x-1"},{"author","0xpromoter111111"},
                                    {"hlc",QJsonObject{{"wall",double(at(-1,14))},{"ctr",0},{"dev","0xpromoter"}}},{"data",QJsonObject{{"text","Rider confirmed, two CDJs + mixer"}}}}};
     auto artist = [&](const QString &id, const QString &target, const QString &author, const QJsonObject &data) {
-        return QJsonObject{{"ns","xyz.frequencies"},{"kind","artist"},{"target",target},{"id",id},{"author",author},
+        return QJsonObject{{"ns","xyz.freequencies"},{"kind","artist"},{"target",target},{"id",id},{"author",author},
                            {"hlc",QJsonObject{{"wall",double(at(-1,12))},{"ctr",0},{"dev","d"}}},{"data",data}};
     };
     QJsonArray n1ext = comment;
@@ -128,22 +128,22 @@ int main(int argc, char **argv) {
     n1ext.append(artist("a3","n1","0xme",QJsonObject{{"name","Nobody"},{"status","cancelled"}}));
     n1ext.append(artist("a4","n1","0xme",QJsonValue("garbage").toObject()));
     auto form = [&](const QString &fid, const QString &author, const QString &purpose, const QString &title) {
-        return QJsonObject{{"ns","xyz.frequencies"},{"kind","form"},{"target","n1"},{"id",fid},{"author",author},
+        return QJsonObject{{"ns","xyz.freequencies"},{"kind","form"},{"target","n1"},{"id",fid},{"author",author},
                            {"hlc",QJsonObject{{"wall",double(at(-1,13))},{"ctr",0},{"dev","d"}}},
                            {"data",QJsonObject{{"formId",fid},{"uri","whisperbox://form?id="+fid+"&by="+author},{"purpose",purpose},{"title",title}}}};
     };
     n1ext.append(form("form-a1","0xme","guestlist","Guest list: Bassline Fridays"));
     n1ext.append(form("form-b2","0xpromoter111111","crew","Crew for Bassline Fridays"));
-    n1ext.append(QJsonObject{{"ns","xyz.frequencies"},{"kind","form"},{"target","n1"},{"id","bad"},{"data",42}});
+    n1ext.append(QJsonObject{{"ns","xyz.freequencies"},{"kind","form"},{"target","n1"},{"id","bad"},{"data",42}});
     auto crewItem = [&](const QString &id, const QString &target, const QString &author, const QJsonObject &data) {
-        return QJsonObject{{"ns","xyz.frequencies"},{"kind","crew"},{"target",target},{"id",id},{"author",author},
+        return QJsonObject{{"ns","xyz.freequencies"},{"kind","crew"},{"target",target},{"id",id},{"author",author},
                            {"hlc",QJsonObject{{"wall",double(at(-1,12))},{"ctr",0},{"dev","d"}}},{"data",data}};
     };
     auto checkin = [&](const QString &slot, const QString &author, double when) {
-        return QJsonObject{{"ns","xyz.frequencies"},{"kind","checkin"},{"target","n1"},{"id","checkin:"+slot+":h1"},{"author",author},
+        return QJsonObject{{"ns","xyz.freequencies"},{"kind","checkin"},{"target","n1"},{"id","checkin:"+slot+":h1"},{"author",author},
                            {"hlc",QJsonObject{{"wall",when},{"ctr",0},{"dev","d"}}},{"data",QJsonObject{{"crew",slot},{"at",when}}}};
     };
-    n1ext.append(QJsonObject{{"ns","xyz.frequencies"},{"kind","public"},{"target","n1"},{"id","public:n1:p1"},{"author","0xme"},
+    n1ext.append(QJsonObject{{"ns","xyz.freequencies"},{"kind","public"},{"target","n1"},{"id","public:n1:p1"},{"author","0xme"},
                              {"hlc",QJsonObject{{"wall",double(at(-1,9))},{"ctr",0},{"dev","d"}}},{"data",QJsonObject{{"calendar","c5"}}}});
     n1ext.append(crewItem("cr1","n1","0xme",QJsonObject{{"name","Jana Door"},{"contact","k5"},{"book","b2"},{"role","Door"},{"call","21:30"},{"status","confirmed"}}));
     n1ext.append(crewItem("cr2","n1","0xme",QJsonObject{{"name","Petr"},{"role","Bar"},{"call","21:00"},{"status","asked"}}));

@@ -1,8 +1,8 @@
-// The crew of a night (ADR 0007): crew slots (ns "xyz.frequencies", kind "crew") and check-ins
+// The crew of a night (ADR 0007): crew slots (ns "xyz.freequencies", kind "crew") and check-ins
 // (kind "checkin") stored as Scala ext items on the event.
-// Pure; the desktop view (FrequenciesView.qml `crewOf`) mirrors it.
+// Pure; the desktop view (FreequenciesView.qml `crewOf`) mirrors it.
 
-const NS = "xyz.frequencies";
+const NS = "xyz.freequencies";
 export const KIND_CREW = "crew";
 export const KIND_CHECKIN = "checkin";
 export type CrewStatus = "asked" | "confirmed" | "cancelled";

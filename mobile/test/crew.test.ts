@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { crewOf, crewSummary, crewSummaryLabel, checkinId } from "../src/app/crew.ts";
 import { doubleBookings } from "../src/app/lineup.ts";
 
-const crew = (id: string, data: unknown, extra: object = {}) => ({ ns: "xyz.frequencies", kind: "crew", id, author: "a1", data, ...extra });
-const checkin = (slot: string, extra: object = {}, at = 1000) => ({ ns: "xyz.frequencies", kind: "checkin", id: checkinId(slot), author: "door", data: { crew: slot, at }, ...extra });
+const crew = (id: string, data: unknown, extra: object = {}) => ({ ns: "xyz.freequencies", kind: "crew", id, author: "a1", data, ...extra });
+const checkin = (slot: string, extra: object = {}, at = 1000) => ({ ns: "xyz.freequencies", kind: "checkin", id: checkinId(slot), author: "door", data: { crew: slot, at }, ...extra });
 
 // crewOf: typed reads, malformed skipped, open slots, sorted by role → call → named first → name
 const ev = { ext: [
@@ -17,9 +17,9 @@ const ev = { ext: [
   checkin("1"),
   checkin("1", { author: "late" }, 2000),                    // a second, later check-in: the earliest counts
   checkin("2"),                                               // open slot can't be checked in
-  { ns: "xyz.frequencies", kind: "checkin", id: "checkin:1:x", data: { crew: "6", at: 5 } },   // id names another slot
+  { ns: "xyz.freequencies", kind: "checkin", id: "checkin:1:x", data: { crew: "6", at: 5 } },   // id names another slot
   checkin("gone"),                                            // slot no longer exists
-  { ns: "xyz.frequencies", kind: "artist", id: "a", data: { name: "DJ" } },
+  { ns: "xyz.freequencies", kind: "artist", id: "a", data: { name: "DJ" } },
   null,
 ] };
 const cs = crewOf(ev);
@@ -47,7 +47,7 @@ const day = Date.UTC(2026, 9, 17, 20);
 const nights = [
   { key: "n1", startTime: day, endTime: day + 6 * 3600e3, title: "One", ext: [crew("c1", { name: "Jana", role: "Door", contact: "k1" })] },
   { key: "n2", startTime: day + 3600e3, endTime: day + 5 * 3600e3, title: "Two",
-    ext: [{ ns: "xyz.frequencies", kind: "artist", id: "a1", data: { name: "Jana K", contact: "k1" } }] },
+    ext: [{ ns: "xyz.freequencies", kind: "artist", id: "a1", data: { name: "Jana K", contact: "k1" } }] },
   { key: "n3", startTime: day, endTime: day + 3600e3, title: "Three", ext: [crew("c2", { name: "", role: "Bar" }), crew("c3", { name: "Ota", role: "Bar", status: "cancelled" })] },
   { key: "n4", startTime: day, endTime: day + 3600e3, title: "Four", ext: [crew("c4", { name: "", role: "Bar" }), crew("c5", { name: "ota", role: "Door" })] },
 ];

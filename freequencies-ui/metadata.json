@@ -1,12 +1,12 @@
 {
-  "name": "frequencies_ui",
-  "display_name": "Frequencies",
+  "name": "freequencies_ui",
+  "display_name": "Freequencies",
   "icon": "icon.png",
   "version": "0.5.0",
   "type": "ui_qml",
   "category": "general",
-  "description": "Frequencies: organise club nights on top of the Scala calendar: venues, status, line-up and fees with artists from Kith, booking/crew/guest-list forms from WhisperBox, comments",
-  "view": "qml/FrequenciesView.qml",
+  "description": "Freequencies: organise club nights on top of the Scala calendar: venues, status, line-up and fees with artists from Kith, booking/crew/guest-list forms from WhisperBox, comments",
+  "view": "qml/FreequenciesView.qml",
   "dependencies": [
     "scala",
     "kith",

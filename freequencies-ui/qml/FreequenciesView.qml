@@ -1,7 +1,7 @@
-// Frequencies — organise club nights on top of the Scala calendar.
+// Freequencies — organise club nights on top of the Scala calendar.
 //
 // A pure-QML view over the `scala` core module (ADR 0001 / 0002): it reads and writes Scala's
-// calendars, so every night is an ordinary Scala event and shows up in Scala too. Frequencies'
+// calendars, so every night is an ordinary Scala event and shows up in Scala too. Freequencies'
 // own data rides in Scala's mechanisms: the calendar's custom fields (Status, Venue, Type) and
 // Scala's per-event comments (ext items, ns "scala", kind "comment").
 //
@@ -30,14 +30,14 @@ Item {
     function _deliver(cb, raw) {
         if (!cb) return
         try { cb(raw === undefined || raw === null ? "" : raw) }
-        catch (e) { console.warn("frequencies: callback error: " + e) }
+        catch (e) { console.warn("freequencies: callback error: " + e) }
     }
     function callVia(module, method, args, cb) {
         var a = args || []
         if (!root.hasBridge()) { Qt.callLater(function () { root._deliver(cb, "") }); return }
         if (typeof logos.callModuleAsync === "function") {
             try { logos.callModuleAsync(module, method, a, function (res) { root._deliver(cb, res) }, root.callTimeoutMs) }
-            catch (e) { console.warn("frequencies: callModuleAsync threw: " + e); Qt.callLater(function () { root._deliver(cb, "") }) }
+            catch (e) { console.warn("freequencies: callModuleAsync threw: " + e); Qt.callLater(function () { root._deliver(cb, "") }) }
             return
         }
         Qt.callLater(function () {
@@ -73,7 +73,7 @@ Item {
     readonly property color cMauve:   "#cba6f7"
     readonly property color cPink:    "#f5c2e7"
 
-    // ── the Frequencies schema: custom fields a calendar gets when it's used for Frequencies ──
+    // ── the Freequencies schema: custom fields a calendar gets when it's used for Freequencies ──
     readonly property var statuses: ["Hold", "Confirmed", "Cancelled"]
     readonly property var types: ["Club night", "Concert", "Residency", "Other"]
     readonly property var freqFields: [
@@ -126,7 +126,7 @@ Item {
 
     function calById(id) { for (var i = 0; i < calendars.length; i++) if (calendars[i].id === id) return calendars[i]; return null }
     function eventById(id) { for (var i = 0; i < events.length; i++) if (events[i].id === id) return events[i]; return null }
-    // A calendar is a Frequencies calendar when its `status` field is the Frequencies one: a choice
+    // A calendar is a Freequencies calendar when its `status` field is the Freequencies one: a choice
     // field offering Hold, Confirmed and Cancelled. A `status` field of another shape belongs to
     // someone else's convention and is left alone.
     function statusFieldOf(c) {
@@ -140,11 +140,11 @@ Item {
         return true
     }
     function isFreqCal(c) { return isFreqStatusField(statusFieldOf(c)) }
-    // Why "Use for Frequencies" can't adopt this calendar ("" = it can).
+    // Why "Use for Freequencies" can't adopt this calendar ("" = it can).
     function adoptBlocker(c) {
-        if (!isEditorOf(c)) return "Only its owner or editors can add Frequencies fields"
+        if (!isEditorOf(c)) return "Only its owner or editors can add Freequencies fields"
         var sf = statusFieldOf(c)
-        if (sf && !isFreqStatusField(sf)) return "Has its own “status” field, so Frequencies leaves it alone"
+        if (sf && !isFreqStatusField(sf)) return "Has its own “status” field, so Freequencies leaves it alone"
         var sc = (c && c.schema) || []
         for (var i = 0; i < sc.length; i++) {
             var f = sc[i]
@@ -167,7 +167,7 @@ Item {
         return r[me] === "editor" || r[me] === "admin"
     }
 
-    // "Use for Frequencies": add the Status / Venue / Type fields to a calendar's schema (keeps its own fields).
+    // "Use for Freequencies": add the Status / Venue / Type fields to a calendar's schema (keeps its own fields).
     function adoptCalendar(c) {
         var why = adoptBlocker(c)
         if (why) { root.notify(why + ".", true); return }
@@ -178,7 +178,7 @@ Item {
             if (!have) sc.push(f)
         }
         root.core("updateCalendarMeta", [c.id, JSON.stringify({ schema: sc })], function (r) {
-            if (root.j(r, false) === true || String(r) === "true") { root.notify("“" + (c.name || "Calendar") + "” now uses Frequencies fields"); root.refresh() }
+            if (root.j(r, false) === true || String(r) === "true") { root.notify("“" + (c.name || "Calendar") + "” now uses Freequencies fields"); root.refresh() }
             else root.notify("Couldn't update “" + (c.name || "the calendar") + "”. Only its owner or editors can change its fields.", true)
         })
     }
@@ -271,7 +271,7 @@ Item {
         if (r === "viewer") return false
         return c.collab === true || (!!ev.creatorId && ev.creatorId === me)
     }
-    // Change one Frequencies field on the night (status / venue / type) — a normal Scala edit.
+    // Change one Freequencies field on the night (status / venue / type) — a normal Scala edit.
     property bool saving: false
     // Scala replaces a whole event on every edit (last write wins per event), so the edit is built on
     // the freshest copy, fetched right before saving: a title or time someone changed since the board
@@ -331,7 +331,7 @@ Item {
         var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], out = []
         for (var i = 0; i < xs.length; i++) {
             var x = xs[i]
-            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "artist" || !str(x.id)) continue
+            if (!x || x.ns !== "xyz.freequencies" || x.kind !== "artist" || !str(x.id)) continue
             var d = (x.data && typeof x.data === "object") ? x.data : {}
             var name = str(d.name).trim()
             if (!name) continue
@@ -467,7 +467,7 @@ Item {
         if (aContact) { data.contact = aContact; data.book = aBook }
         if (fee !== null) { data.fee = fee; data.currency = aCur.text.trim().toUpperCase() }
         if (aSet.text.trim()) data.set = aSet.text.trim()
-        var item = { ns: "xyz.frequencies", kind: "artist", target: selMaster.id, data: data }
+        var item = { ns: "xyz.freequencies", kind: "artist", target: selMaster.id, data: data }
         var editId = aId
         if (editId) item.id = editId
         artistBusy = true
@@ -499,7 +499,7 @@ Item {
         var nightId = str(ev && ev.id), xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], best = null
         for (var i = 0; i < xs.length; i++) {
             var x = xs[i]
-            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "public" || !nightId || str(x.id).indexOf(publicPrefix(nightId)) !== 0) continue
+            if (!x || x.ns !== "xyz.freequencies" || x.kind !== "public" || !nightId || str(x.id).indexOf(publicPrefix(nightId)) !== 0) continue
             var d = (x.data && typeof x.data === "object" && !Array.isArray(x.data)) ? x.data : {}
             var cal = str(d.calendar)
             if (!cal) continue
@@ -529,7 +529,7 @@ Item {
             var xs = Array.isArray(n.ext) ? n.ext : []
             for (var k = 0; k < xs.length; k++) {
                 var x = xs[k], d = (x && x.data && typeof x.data === "object") ? x.data : {}
-                if (x && x.ns === "xyz.frequencies" && x.kind === "form" && str(d.purpose) === "guestlist" && str(d.uri)) {
+                if (x && x.ns === "xyz.freequencies" && x.kind === "form" && str(d.purpose) === "guestlist" && str(d.uri)) {
                     if (lines.length) lines.push(""); lines.push("Guest list: " + str(d.uri)); break
                 }
             }
@@ -609,7 +609,7 @@ Item {
     function makePublic(calId) {
         if (!selMaster || pubBusy) return
         pubBusy = true
-        var item = { ns: "xyz.frequencies", kind: "public", target: selMaster.id, id: publicItemId(selMaster.id), data: { calendar: calId } }
+        var item = { ns: "xyz.freequencies", kind: "public", target: selMaster.id, id: publicItemId(selMaster.id), data: { calendar: calId } }
         core("postExt", [selMaster.calendarId, JSON.stringify(item)], function (r) {
             pubBusy = false
             var res = j(r, {})
@@ -623,7 +623,7 @@ Item {
         core("createCalendar", [(selCal.name || "Our nights") + " (public)", selCal.color || "#89b4fa", ""], function (r) {
             var id = str(j(r, ""))
             if (!id) { pubBusy = false; notify("Couldn't create the calendar.", true); return }
-            core("updateCalendarMeta", [id, JSON.stringify({ open: false, description: "What's on. Published from Frequencies." })], function () {
+            core("updateCalendarMeta", [id, JSON.stringify({ open: false, description: "What's on. Published from Freequencies." })], function () {
                 pubBusy = false; makePublic(id)
             })
         })
@@ -655,7 +655,7 @@ Item {
         var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], ins = {}, out = []
         for (var i = 0; i < xs.length; i++) {
             var x = xs[i]
-            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "checkin" || !str(x.id)) continue
+            if (!x || x.ns !== "xyz.freequencies" || x.kind !== "checkin" || !str(x.id)) continue
             var d = (x.data && typeof x.data === "object" && !Array.isArray(x.data)) ? x.data : {}
             var slot = str(d.crew)
             if (!slot || str(x.id).indexOf(checkinPrefix(slot)) !== 0) continue
@@ -665,7 +665,7 @@ Item {
         }
         for (var k = 0; k < xs.length; k++) {
             var y = xs[k]
-            if (!y || y.ns !== "xyz.frequencies" || y.kind !== "crew" || !str(y.id)) continue
+            if (!y || y.ns !== "xyz.freequencies" || y.kind !== "crew" || !str(y.id)) continue
             var e = (y.data && typeof y.data === "object" && !Array.isArray(y.data)) ? y.data : {}
             var name = str(e.name).trim(), role = str(e.role).trim()
             if (!name && !role) continue
@@ -736,7 +736,7 @@ Item {
         var data = { name: name, role: role, status: cStatus }
         if (name && cContact) { data.contact = cContact; data.book = cBook }
         if (cCall.text.trim()) data.call = cCall.text.trim()
-        var item = { ns: "xyz.frequencies", kind: "crew", target: selMaster.id, data: data }
+        var item = { ns: "xyz.freequencies", kind: "crew", target: selMaster.id, data: data }
         var editId = cId
         if (editId) item.id = editId
         crewBusy = true
@@ -769,7 +769,7 @@ Item {
             if (res && res.ok) { notify(what); refresh() } else notify("Couldn't check in" + (res && res.error ? ": " + res.error : "."), true)
         }
         if (c.checkedIn) core("deleteExt", [selMaster.calendarId, c.checkedIn.id], function (r) { done(r, "Check-in undone") })
-        else core("postExt", [selMaster.calendarId, JSON.stringify({ ns: "xyz.frequencies", kind: "checkin", target: selMaster.id, id: checkinId(c.id),
+        else core("postExt", [selMaster.calendarId, JSON.stringify({ ns: "xyz.freequencies", kind: "checkin", target: selMaster.id, id: checkinId(c.id),
                                                                      data: { crew: c.id, at: Date.now() } })], function (r) { done(r, c.name + " is here") })
     }
 
@@ -783,7 +783,7 @@ Item {
         var xs = (ev && Array.isArray(ev.ext)) ? ev.ext : [], out = []
         for (var i = 0; i < xs.length; i++) {
             var x = xs[i]
-            if (!x || x.ns !== "xyz.frequencies" || x.kind !== "form" || !str(x.id)) continue
+            if (!x || x.ns !== "xyz.freequencies" || x.kind !== "form" || !str(x.id)) continue
             var d = (x.data && typeof x.data === "object") ? x.data : {}
             var fid = str(d.formId)
             if (!fid) continue
@@ -851,7 +851,7 @@ Item {
             var fid = str(res.formId)
             wb("shareUri", [fid], function (r2) {
                 var su = j(r2, {}), uri = (su && su.ok) ? str(su.uri) : ""
-                var item = { ns: "xyz.frequencies", kind: "form", target: ev.id, id: fid, data: { formId: fid, uri: uri, purpose: purpose, title: def.title } }
+                var item = { ns: "xyz.freequencies", kind: "form", target: ev.id, id: fid, data: { formId: fid, uri: uri, purpose: purpose, title: def.title } }
                 core("postExt", [ev.calendarId, JSON.stringify(item)], function (r3) {
                     formBusy = false
                     var px = j(r3, {})
@@ -964,10 +964,10 @@ Item {
             ColumnLayout {
                 id: sideCol
                 width: sideFlick.width; spacing: 8
-                LogosText { textFormat: Text.PlainText; text: "Frequencies"; color: root.cText; font.pixelSize: 20; font.weight: Theme.typography.weightMedium }
+                LogosText { textFormat: Text.PlainText; text: "Freequencies"; color: root.cText; font.pixelSize: 20; font.weight: Theme.typography.weightMedium }
                 LogosText { textFormat: Text.PlainText; text: "Calendars"; color: root.cFaint; font.pixelSize: 11; Layout.topMargin: 8 }
                 LogosText { textFormat: Text.PlainText; visible: !root.loading && root.freqCals.length === 0; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
-                    text: "None yet. Pick a Scala calendar below and choose “Use for Frequencies”, or create one in Scala first." }
+                    text: "None yet. Pick a Scala calendar below and choose “Use for Freequencies”, or create one in Scala first." }
                 Repeater {
                     model: root.freqCals
                     delegate: RowLayout {
@@ -991,7 +991,7 @@ Item {
                         LogosText { textFormat: Text.PlainText; text: modelData.name || "(unnamed)"; color: root.cSub; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
                         LogosText { textFormat: Text.PlainText
                             readonly property string why: root.adoptBlocker(parent.modelData)
-                            text: why === "" ? "Use for Frequencies" : why
+                            text: why === "" ? "Use for Freequencies" : why
                             color: why === "" ? root.cBlue : root.cFaint; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.Wrap
                             MouseArea { anchors.fill: parent; enabled: parent.why === ""; cursorShape: Qt.PointingHandCursor; onClicked: root.adoptCalendar(parent.parent.modelData) }
                         }
@@ -1188,7 +1188,7 @@ Item {
                             }
                         }
                     }
-                    // Line-up: Frequencies ext items on the night (ADR 0004); artists from Kith.
+                    // Line-up: Freequencies ext items on the night (ADR 0004); artists from Kith.
                     RowLayout {
                         Layout.fillWidth: true; Layout.topMargin: 6
                         LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Line-up (" + root.lineupOf(root.selMaster).length + ")"; color: root.cFaint; font.pixelSize: 11 }
@@ -1234,7 +1234,7 @@ Item {
                             LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 11
                                 visible: !!pubBox.link
                                 text: root.putMissing ? "The public copy can't be updated from here: update the ‘scala’ package to 0.12.4 or newer."
-                                    : root.mirrorBlocked[root.selMaster ? root.selMaster.id : ""] ? "You can't update the public copy: ask an editor of the public calendar to open Frequencies."
+                                    : root.mirrorBlocked[root.selMaster ? root.selMaster.id : ""] ? "You can't update the public copy: ask an editor of the public calendar to open Freequencies."
                                     : "Attendees see the time, venue, confirmed artists and the guest-list link. Nothing else." }
                             Flow {
                                 Layout.fillWidth: true; spacing: 14
@@ -1516,7 +1516,7 @@ Item {
             anchors.fill: parent; spacing: 8
             LogosText { textFormat: Text.PlainText; text: "Make this night public"; color: root.cText; font.pixelSize: 18; font.weight: Theme.typography.weightMedium }
             LogosText { textFormat: Text.PlainText; Layout.fillWidth: true; wrapMode: Text.Wrap; color: root.cSub; font.pixelSize: 12
-                text: "Frequencies keeps a copy of this night in a public calendar and updates it whenever the night changes. The copy has the time, venue, confirmed artists and the guest-list link; never fees, crew, holds, notes or comments." }
+                text: "Freequencies keeps a copy of this night in a public calendar and updates it whenever the night changes. The copy has the time, venue, confirmed artists and the guest-list link; never fees, crew, holds, notes or comments." }
             LogosText { textFormat: Text.PlainText; text: "Publish to"; color: root.cFaint; font.pixelSize: 11 }
             Repeater {
                 model: root.publicTargets

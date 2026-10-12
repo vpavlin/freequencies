@@ -1,10 +1,10 @@
 // The line-up of a night (ADR 0004): artist bookings stored as Scala ext items
-// (ns "xyz.frequencies", kind "artist") on the event, plus the "same artist booked twice" warning.
-// Pure; the desktop view (FrequenciesView.qml `lineupOf` / `doubleBookings`) mirrors it.
+// (ns "xyz.freequencies", kind "artist") on the event, plus the "same artist booked twice" warning.
+// Pure; the desktop view (FreequenciesView.qml `lineupOf` / `doubleBookings`) mirrors it.
 
 import { crewOf } from "./crew.ts";
 
-export const NS = "xyz.frequencies";
+export const NS = "xyz.freequencies";
 export const KIND_ARTIST = "artist";
 export type BookingStatus = "asked" | "confirmed" | "cancelled";
 export const STATUSES: BookingStatus[] = ["asked", "confirmed", "cancelled"];

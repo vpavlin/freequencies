@@ -1,4 +1,4 @@
-// Frequencies embeds two engines, scala-sdk (src/lib) and kith-sdk (src/kith), and each carries
+// Freequencies embeds two engines, scala-sdk (src/lib) and kith-sdk (src/kith), and each carries
 // loam-transport as a submodule. The app must have ONE transport (one node connection, one set of
 // receivers), so anything kith-sdk imports from its copy resolves to the scala-sdk copy instead.
 // Keep both submodules on the same loam-transport commit.

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { publicLinkOf, publicItemId, publicEventId, publicCopyOf, sameCopy, mirrorPlan, copyToEvent } from "../src/app/publish.ts";
 
 const pub = (night: string, cal: unknown, wall: number, extra: object = {}) =>
-  ({ ns: "xyz.frequencies", kind: "public", id: publicItemId(night), author: "a", hlc: { wall, ctr: 0, dev: "d" }, data: { calendar: cal }, ...extra });
-const artist = (id: string, data: object) => ({ ns: "xyz.frequencies", kind: "artist", id, data });
-const form = (purpose: string, uri: string) => ({ ns: "xyz.frequencies", kind: "form", id: "f-" + purpose, data: { formId: "x", uri, purpose } });
+  ({ ns: "xyz.freequencies", kind: "public", id: publicItemId(night), author: "a", hlc: { wall, ctr: 0, dev: "d" }, data: { calendar: cal }, ...extra });
+const artist = (id: string, data: object) => ({ ns: "xyz.freequencies", kind: "artist", id, data });
+const form = (purpose: string, uri: string) => ({ ns: "xyz.freequencies", kind: "form", id: "f-" + purpose, data: { formId: "x", uri, purpose } });
 
 // publicLinkOf: earliest live item for THIS night; malformed ignored
 assert.equal(publicLinkOf({ id: "n1", ext: [] }), null);
@@ -22,7 +22,7 @@ const night = {
     artist("a1", { name: "Mira Vex", set: "01:30–04:00", fee: 300, status: "confirmed" }),
     artist("a2", { name: "Hana Sun", set: "22:00–23:30", fee: 80, status: "confirmed" }),
     artist("a3", { name: "Maybe Guy", status: "asked" }),
-    { ns: "xyz.frequencies", kind: "crew", id: "c1", data: { name: "Jana", role: "Door" } },
+    { ns: "xyz.freequencies", kind: "crew", id: "c1", data: { name: "Jana", role: "Door" } },
     { ns: "scala", kind: "comment", id: "k", data: { text: "secret" } },
     form("crew", "whisperbox://crew"),
     form("guestlist", "whisperbox://guests"),

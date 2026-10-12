@@ -1,10 +1,10 @@
 /**
- * withReleaseSigning — sign release builds with the real Frequencies key.
+ * withReleaseSigning — sign release builds with the real Freequencies key.
  *
  * Expo's template signs BOTH debug and release with the checked-in debug
  * keystore. That key is the well-known Android debug key: not secret, and
  * shared — anyone could sign an APK your phone would accept as an update to
- * Frequencies. It's also a one-way door: Android identifies an app by its signing
+ * Freequencies. It's also a one-way door: Android identifies an app by its signing
  * certificate, so switching keys after publishing forces every user to
  * uninstall/reinstall.
  *
@@ -12,8 +12,8 @@
  * app can never be updated again). They live in the user-global
  * ~/.gradle/gradle.properties:
  *
- *   FREQUENCIES_STORE_FILE=/home/vpavlin/keystores/frequencies-release.jks
- *   FREQUENCIES_STORE_PASSWORD=…   FREQUENCIES_KEY_ALIAS=frequencies   FREQUENCIES_KEY_PASSWORD=…
+ *   FREEQUENCIES_STORE_FILE=/home/vpavlin/keystores/freequencies-release.jks
+ *   FREEQUENCIES_STORE_PASSWORD=…   FREEQUENCIES_KEY_ALIAS=freequencies   FREEQUENCIES_KEY_PASSWORD=…
  *
  * If those properties are absent (e.g. a fresh clone / CI without secrets) the
  * build falls back to the debug key rather than failing.
@@ -23,11 +23,11 @@ const { withAppBuildGradle } = require("@expo/config-plugins");
 const RELEASE_SIGNING_CONFIG = `
         release {
             // Credentials come from ~/.gradle/gradle.properties (outside this repo).
-            if (project.hasProperty('FREQUENCIES_STORE_FILE')) {
-                storeFile file(project.property('FREQUENCIES_STORE_FILE'))
-                storePassword project.property('FREQUENCIES_STORE_PASSWORD')
-                keyAlias project.property('FREQUENCIES_KEY_ALIAS')
-                keyPassword project.property('FREQUENCIES_KEY_PASSWORD')
+            if (project.hasProperty('FREEQUENCIES_STORE_FILE')) {
+                storeFile file(project.property('FREEQUENCIES_STORE_FILE'))
+                storePassword project.property('FREEQUENCIES_STORE_PASSWORD')
+                keyAlias project.property('FREEQUENCIES_KEY_ALIAS')
+                keyPassword project.property('FREEQUENCIES_KEY_PASSWORD')
             }
             // F-Droid verifies APKs via the v1 (JAR) signature; RN 0.86's AGP defaults v1 OFF,
             // producing v2-only APKs F-Droid rejects with "failed to verify". Force v1 on.
@@ -39,7 +39,7 @@ module.exports = (config) =>
   withAppBuildGradle(config, (cfg) => {
     let s = cfg.modResults.contents;
 
-    if (!s.includes("FREQUENCIES_STORE_FILE")) {
+    if (!s.includes("FREEQUENCIES_STORE_FILE")) {
       // 1) add a `release` signing config alongside the template's `debug` one
       const before = s;
       s = s.replace(/(signingConfigs\s*\{)/, `$1${RELEASE_SIGNING_CONFIG}`);
@@ -53,7 +53,7 @@ module.exports = (config) =>
       if (!anchor.test(s)) throw new Error("withReleaseSigning: release buildType anchor not found");
       s = s.replace(
         anchor,
-        `$1signingConfig project.hasProperty('FREQUENCIES_STORE_FILE') ? signingConfigs.release : signingConfigs.debug`
+        `$1signingConfig project.hasProperty('FREEQUENCIES_STORE_FILE') ? signingConfigs.release : signingConfigs.debug`
       );
 
       cfg.modResults.contents = s;

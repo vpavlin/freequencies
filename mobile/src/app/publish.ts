@@ -1,11 +1,11 @@
-// The public copy of a night (ADR 0008): a night with a live `public` item (ns "xyz.frequencies") is
+// The public copy of a night (ADR 0008): a night with a live `public` item (ns "xyz.freequencies") is
 // copied into an ordinary Scala calendar under the id `pub-<night id>`, with only what attendees may
 // see. Pure, so every organiser's device computes the same copy; the desktop view
-// (FrequenciesView.qml `publicCopyOf` / `mirrorPlan`) mirrors it.
+// (FreequenciesView.qml `publicCopyOf` / `mirrorPlan`) mirrors it.
 
 import { lineupOf } from "./lineup.ts";
 
-const NS = "xyz.frequencies";
+const NS = "xyz.freequencies";
 export const KIND_PUBLIC = "public";
 
 interface ExtItem { ns?: unknown; kind?: unknown; id?: unknown; author?: unknown; data?: unknown; hlc?: unknown }
@@ -89,8 +89,8 @@ export function sameCopy(cur: Partial<PublicCopy> & { recur?: unknown } | undefi
 export interface MirrorWrite { calendarId: string; id: string; copy: PublicCopy; nightId: string }
 
 // What to write so every published (or formerly published) night's copy is up to date.
-// `nights` are the Frequencies calendars' events (masters, with ext); `all` is every event this device
-// has; `isPublicTarget(calId)` says whether a calendar may receive copies (known here, not a Frequencies
+// `nights` are the Freequencies calendars' events (masters, with ext); `all` is every event this device
+// has; `isPublicTarget(calId)` says whether a calendar may receive copies (known here, not a Freequencies
 // calendar). A night whose switch is off but whose copy exists gets the "Cancelled" copy.
 export function mirrorPlan(nights: NightLike[], all: { id: string; calendarId: string }[], isPublicTarget: (calId: string) => boolean): MirrorWrite[] {
   const byId = new Map<string, { id: string; calendarId: string }[]>();
